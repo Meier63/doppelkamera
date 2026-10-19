@@ -2396,12 +2396,39 @@ let audio = null;
 function audioKontext() {
   const AC = window.AudioContext || window.webkitAudioContext;
   if (!AC) return null;
+  // iPad/iPhone (ab iOS 17): als Wiedergabe anmelden, sonst unterdrückt die Stummschaltung die Töne
+  try { if (navigator.audioSession && navigator.audioSession.type !== 'playback') navigator.audioSession.type = 'playback'; } catch (e) { /* älteres iOS */ }
   if (!audio) audio = new AC();
-  if (audio.state === 'suspended') audio.resume().catch(() => {});
+  if (audio.state !== 'running') audio.resume().then(tonStatusZeigen, () => {});
   return audio;
 }
-// Safari/iPad spielt Töne erst nach einer Berührung der Seite: beim ersten Tippen freischalten
-document.addEventListener('pointerdown', () => { if (kamEinst.ton !== 'aus' && (!audio || audio.state !== 'running')) audioKontext(); }, true);
+// Safari spielt Töne erst, nachdem die Seite angetippt wurde – und zählt erst das Loslassen (touchend/click), nicht das Aufsetzen.
+// Dabei einen unhörbaren Ton abspielen, damit iOS die Wiedergabe sicher freigibt.
+function tonFreischalten() {
+  if (kamEinst.ton === 'aus' || (audio && audio.state === 'running')) return;
+  const ctx = audioKontext();
+  if (!ctx) return;
+  try {
+    const q = ctx.createBufferSource();
+    q.buffer = ctx.createBuffer(1, 1, 22050);
+    q.connect(ctx.destination);
+    q.start(0);
+  } catch (e) { /* egal */ }
+  setTimeout(tonStatusZeigen, 300);
+}
+['touchend', 'click', 'keydown'].forEach(t => document.addEventListener(t, tonFreischalten, true));
+document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && audio && audio.state !== 'running') audio.resume().catch(() => {}); });
+
+function tonStatusText() {
+  if (kamEinst.ton === 'aus') return 'Ton ist aus.';
+  if (!(window.AudioContext || window.webkitAudioContext)) return '⚠ Dieser Browser kann keine Töne erzeugen.';
+  if (!audio || audio.state !== 'running') return '⚠ Ton noch gesperrt – einmal auf „▶“ tippen.';
+  return '✓ Ton bereit.';
+}
+function tonStatusZeigen() {
+  const el = document.getElementById('tonStatus');
+  if (el) { el.textContent = tonStatusText(); el.className = 'hinweis ' + (/^✓/.test(el.textContent) ? 'ok' : 'warnung'); }
+}
 
 // ein Ton: Frequenz (Hz), Beginn und Dauer (s), Wellenform, Lautstärke 0–1
 function klang(ctx, f, ab, dauer, form, laut) {
@@ -2420,7 +2447,7 @@ function klang(ctx, f, ab, dauer, form, laut) {
 function tonSpielen(treffer, art = kamEinst.ton) {
   if (art === 'aus') return;
   const ctx = audioKontext();
-  if (!ctx) return;
+  if (!ctx || ctx.state === 'closed') return;
   const v = Math.min(1, Math.max(0, kamEinst.lautst)) * 0.5;
   if (!v) return;
   switch (art) {
@@ -2897,13 +2924,15 @@ function renderKamera() {
         ? '<button class="btn" data-a="tonProbe" data-w="1">▶ Treffer</button><button class="btn" data-a="tonProbe" data-w="0">▶ Daneben</button>'
         : `<button class="btn" data-a="tonProbe" data-w="1" ${kamEinst.ton === 'aus' ? 'disabled' : ''}>▶ Probe</button>`}
     </div>
+    <p id="tonStatus" class="hinweis ${/^✓/.test(tonStatusText()) ? 'ok' : 'warnung'}">${tonStatusText()}</p>
     <div class="regler">
       <span>Lautstärke</span><input type="range" min="0" max="1" step="0.1" value="${kamEinst.lautst}" data-c="kamLaut" aria-label="Lautstärke">
       <b id="wertLaut">${Math.round(kamEinst.lautst * 100)} %</b>
     </div>
     <p class="hinweis">Kurzer Ton, sobald die Kamera einen Dart erkannt hat. Bei „Treffer hoch, Daneben tief“ hört man das Ergebnis,
-      ohne aufs Tablet zu schauen. Am iPad ist nichts zu hören, wenn das Gerät stumm geschaltet ist (Kontrollzentrum); nach dem
-      Öffnen der Seite muss sie einmal angetippt werden, bevor Töne möglich sind.</p>
+      ohne aufs Tablet zu schauen. Safari erlaubt Töne erst, nachdem die Seite einmal angetippt wurde.
+      Ist nichts zu hören: Lautstärke des iPads mit den Tasten erhöhen, Stummschaltung im Kontrollzentrum ausschalten
+      und prüfen, ob der Ton über Bluetooth (z. B. Kopfhörer, Lautsprecher) ausgegeben wird.</p>
   </section>`;
 
   h += `<section class="karte"><h2>Tipps für Kamera und Licht</h2>
@@ -3088,7 +3117,7 @@ const aktionen = {
   herunterladen: () => herunterladen(),
   dateiLaden: () => dateiLaden(),
   korrigieren: () => korrigieren(),
-  tonProbe: el => tonSpielen(el.dataset.w === '1'),
+  tonProbe: el => { tonFreischalten(); tonSpielen(el.dataset.w === '1'); setTimeout(tonStatusZeigen, 300); },
   zoomPlus: () => zoomAendern(kamEinst.zoom + 0.25),
   zoomMinus: () => zoomAendern(kamEinst.zoom - 0.25),
   zoomScheibe: () => { zoomAufScheibe(); render(); },
