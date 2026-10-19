@@ -188,6 +188,7 @@ label { display: inline-flex; align-items: center; gap: 8px; }
 .regler input[type=range] { width: 100%; height: 40px; accent-color: var(--gruen); }
 .tipps { margin: 0; padding-left: 20px; }
 .zoom-knoepfe { margin-bottom: 8px; }
+.protokoll { margin: 4px 0 0; padding: 10px; background: var(--karte2); border-radius: 10px; font-size: 14px; white-space: pre-wrap; color: var(--grau); }
 .zoom-knoepfe b { min-width: 52px; text-align: center; }
 .tipps li { margin-bottom: 8px; }
 
@@ -1874,7 +1875,8 @@ let kamEinst = Object.assign({
   empf: 6, ruhe: 400,                  // Empfindlichkeit 1–10, Ruhezeit in ms
   richtung: 'auto', gelernt: null,     // wohin die Flights im Bild zeigen (gelernt: Mittel aus eindeutigen Darts)
   zoom: 1, hwZoom: null,
-  ton: 'zweiton', lautst: 0.6,         // Ton bei erkanntem Dart (siehe TOENE) und Lautstärke 0–1               // digitaler Zoom (Ausschnitt um die Scheibe, 1–4×) und Zoom der Kamera selbst
+  ton: 'zweiton', lautst: 0.6,
+  auffuellen: true,                    // beim Herausziehen fehlende Darts des Durchgangs als Daneben zählen         // Ton bei erkanntem Dart (siehe TOENE) und Lautstärke 0–1               // digitaler Zoom (Ausschnitt um die Scheibe, 1–4×) und Zoom der Kamera selbst
   netz: true, diff: false, knapp: 2    // Netz/Unterschied im Bild zeigen; „knapp“ ab so vielen mm am Feldrand
 }, lsLesen(LS.kamera) || {});
 const kamSpeichern = () => lsSchreiben(LS.kamera, kamEinst);
@@ -2025,6 +2027,7 @@ const K = {
   maske: null, maskeK: null, maskeAnz: 0, pxProMm: 1,
   stillSeit: 0, bewegt: false, grossMs: 0, letzteZeit: 0, letztePruefung: 0, letzteAnalyse: 0, seitLeer: 0,
   status: '', letzte: null, testPunkte: [], diffBild: null, schleife: false,
+  dartBereiche: [], protokoll: [],   // erkannte Darts des Durchgangs (Bildpunkte im Ausschnitt) und die letzten Ereignisse
   eich: -1, eichNeu: [], justieren: false, gewaehlt: 0, ziehen: null
 };
 
@@ -2237,6 +2240,7 @@ function groessePruefen() {
     K.cv = leinwand(W, H); K.cx = K.cv.getContext('2d', { willReadFrequently: true });
     K.cvk = leinwand(K.w, K.h); K.cxk = K.cvk.getContext('2d', { willReadFrequently: true });
     K.ref = K.refLeer = K.refKlein = K.vorher = null;
+    K.dartBereiche = [];
     K.maske = null;
     K.warnung = kamEinst.punkte && kamEinst.seitenverh && Math.abs(kamEinst.seitenverh - vw / vh) > 0.02
       ? 'Das Kamerabild hat ein anderes Format als beim Einrichten – bitte die Scheibe neu einrichten.' : '';
@@ -2268,7 +2272,22 @@ function referenzNehmen(F) {
   K.refLeer = { y: K.ref.y.slice(), c: K.ref.c.slice() };
   K.refKlein = bildLesen(false);
   K.seitLeer = 0;
+  K.dartBereiche = [];
   K.diffBild = null;
+}
+
+function protokoll(text) {
+  const d = new Date();
+  K.protokoll = [`${fmtZeit(d)}:${pad(d.getSeconds())}  ${text}`].concat(K.protokoll).slice(0, 15);
+  const el = document.getElementById('kameraProtokoll');
+  if (el) el.textContent = K.protokoll.join('\n');
+}
+
+// Anteil der Bildpunkte eines Bereichs, die in der Maske m gesetzt sind
+function anteilIn(px, m) {
+  let n = 0;
+  for (const i of px) if (m[i]) n++;
+  return px.length ? n / px.length : 0;
 }
 
 function erkennungZuruecksetzen() {
@@ -2279,6 +2298,7 @@ function erkennungZuruecksetzen() {
   K.bewegt = false;
   K.grossMs = 0;
   K.seitLeer = 0;
+  K.dartBereiche = [];
   K.diffBild = null;
 }
 
@@ -2298,9 +2318,11 @@ function analysieren(jetzt) {
   if (!groessePruefen()) { statusSetzen('Warte auf das Kamerabild …'); return; }
   const klein = bildLesen(false);
   if (K.vorher) {
-    let n = 0;
+    let n = 0, sum = 0, z = 0;
     const a = klein.y, b = K.vorher.y, m = K.maskeK;
-    for (let i = 0; i < a.length; i++) if (m[i] && Math.abs(a[i] - b[i]) > 14) n++;
+    for (let i = 0; i < a.length; i += 3) if (m[i]) { sum += a[i] - b[i]; z++; }
+    const off = z ? sum / z : 0;   // Belichtungsautomatik der Kamera ist keine Bewegung
+    for (let i = 0; i < a.length; i++) if (m[i] && Math.abs(a[i] - b[i] - off) > 14) n++;
     if (n > Math.max(4, K.maskeAnz * 0.0015)) {
       K.stillSeit = jetzt;
       K.bewegt = true;
@@ -2320,7 +2342,11 @@ function analysieren(jetzt) {
   const minK = Math.max(3, minMm2() * (K.pxProMm * K.w / K.W) ** 2 * 0.5);
   if (!gross && kl.anz < minK) {
     mischen(K.refKlein, klein, 0.1);   // langsame Lichtänderungen übernehmen
-    if (kl.anz < minK / 2 && K.ref) mischen(K.ref, bildLesen(true), 0.1);
+    if (kl.anz < minK / 2 && K.ref) {
+      const F = bildLesen(true);
+      mischen(K.ref, F, 0.1);
+      if (!K.seitLeer && !kameraWartetAufZiehen() && K.refLeer) mischen(K.refLeer, F, 0.1);   // Scheibe leer: auch das Leerbild nachführen
+    }
     statusAktualisieren();
     return;
   }
@@ -2332,36 +2358,64 @@ function auswerten(gross, klein) {
   const minF = Math.max(8, minMm2() * s2), maxF = 20000 * s2;
   const neueRef = () => { K.ref = F; K.refKlein = klein; };
   const warten = kameraWartetAufZiehen();
+  const jetzt = Date.now();
 
-  // Scheibe wieder wie zu Beginn des Durchgangs → Darts wurden herausgezogen
-  if (K.seitLeer > 0 && K.refLeer && unterschied(F, K.refLeer, K.maske, thr).anz < minF) {
+  // Herausgezogen? Nur wenn die Spitzen der erkannten Darts wieder wie die leere Scheibe aussehen –
+  // eine Hand vor der Scheibe, ein Lichtwechsel oder ein nachschwingender Dart zählt nicht.
+  const uL = K.refLeer ? unterschied(F, K.refLeer, K.maske, thr) : null;   // Unterschied zur leeren Scheibe
+  // Mitten im Durchgang zusätzlich nur nach deutlicher Bewegung (Hand im Bild) – Nachschwingen allein reicht nicht.
+  if (uL && (warten || (gross && K.dartBereiche.length))) {
+    const weg = K.dartBereiche.length
+      ? K.dartBereiche.every(d => anteilIn(d.spitze, uL.m) < 0.3)   // nur die Spitze: Flight und Schaft bewegen sich beim Nachschwingen
+      : uL.anz < minF;   // Darts nur von Hand eingegeben: ganze Scheibe mit dem Leerbild vergleichen
+    if (weg) {
+      protokoll(`Herausziehen erkannt (${K.dartBereiche.length} ${K.dartBereiche.length === 1 ? 'Dart' : 'Darts'} weg)`);
+      referenzNehmen(F); K.refKlein = klein;
+      kameraEreignis('gezogen');
+      return;
+    }
+  }
+  const u = unterschied(F, K.ref, K.maske, thr);
+  diffBildSetzen(u.m);
+  if ((gross || u.anz > 2 * maxF) && warten) {
+    // Durchgang voll und viel Bewegung: als Herausziehen werten (es wird dabei nichts aufgefüllt, Zählung bleibt richtig)
+    protokoll('Viel Bewegung nach 3 Darts – als Herausziehen gewertet');
     referenzNehmen(F); K.refKlein = klein;
     kameraEreignis('gezogen');
     return;
   }
-  const u = unterschied(F, K.ref, K.maske, thr);
-  diffBildSetzen(u.m);
-  if (gross || warten || u.anz > 2 * maxF) {
-    // Hand/Person im Bild, Darts gezogen oder Kamera bewegt: neu beginnen
-    const hatteDarts = K.seitLeer > 0 || warten;
-    referenzNehmen(F); K.refKlein = klein;
-    if (hatteDarts) kameraEreignis('gezogen');
-    else if (u.anz > 2 * maxF && !gross) meldung('Das Bild hat sich stark verändert – neues Referenzbild aufgenommen.');
+  if (gross || u.anz > 2 * maxF) {
+    // Hand/Person im Bild oder Licht/Kamera verändert, Darts stecken noch: nur neues Referenzbild, nichts zählen
+    protokoll(gross ? 'Bewegung im Bild (Hand/Person) – nichts gezählt' : 'Bild stark verändert – nichts gezählt');
+    neueRef();
     return;
   }
+  if (warten) { protokoll('Änderung nach 3 Darts – nichts gezählt (erst herausziehen)'); neueRef(); return; }
   const b = dartTeile(bereiche(u.m, K.W, K.H), minF);
   if (!b || b.length < minF) { mischen(K.ref, F, 0.3); statusAktualisieren(); return; }
-  if (b.length > maxF) { neueRef(); statusSetzen('Großer Unterschied – kein Dart erkannt'); return; }
+  if (b.length > maxF) { protokoll('Große Veränderung – kein Dart gezählt'); neueRef(); return; }
+  // Nachschwingen/Verdrehen eines steckenden Darts: Dort, wo vorher Flight oder Schaft war, ist wieder die leere Scheibe
+  // zu sehen. Ein neuer Dart – auch dicht daneben – verdeckt nur zusätzlich etwas und legt nichts frei.
+  const frei = uL ? 1 - anteilIn(b, uL.m) : 0;
+  if (K.dartBereiche.length && frei > 0.25) {
+    protokoll(`Steckender Dart hat sich bewegt (Nachschwingen, ${Math.round(frei * 100)} % frei) – nicht gezählt`);
+    neueRef();
+    return;
+  }
   const sp = spitzeVerfolgen(spitzeSchaetzen(b, K.W), F, K.ref, thr);
   neueRef();
   K.seitLeer++;
+  // Bereich um die Spitze (15 mm) merken: Ist er wieder wie die leere Scheibe, ist der Dart gezogen
+  const R = Math.max(4, 15 * K.pxProMm), spitze = b.filter(i => Math.hypot(i % K.W - sp.x, ((i / K.W) | 0) - sp.y) < R);
+  K.dartBereiche.push({ px: b, spitze: spitze.length >= 4 ? spitze : b, zeit: jetzt });
   const nx = K.a.x + (sp.x + 0.5) / K.W * K.a.w, ny = K.a.y + (sp.y + 0.5) / K.H * K.a.h;
-  const erg = { nx, ny, sicher: sp.sicher, zeit: Date.now() };
+  const erg = { nx, ny, sicher: sp.sicher, zeit: jetzt };
   if (geo) {
     const [bx, by] = abb(geo.zuBrett, nx, ny);
     Object.assign(erg, { bx, by, feld: feldAusPunkt(bx, by) });
   }
   K.letzte = erg;
+  protokoll(`Dart erkannt: ${erg.feld ? erg.feld.name : '(nicht eingerichtet)'}`);
   kameraEreignis('dart', erg);
 }
 
@@ -2483,7 +2537,8 @@ function kameraEreignis(art, erg) {
   K.testPunkte = [];
   if (kameraImSpiel()) {
     const fehlen = L.pause ? 0 : (3 - L.darts.length % 3) % 3;
-    if (fehlen && L.darts.length % 3) {
+    if (fehlen && L.darts.length % 3 && kamEinst.auffuellen) {
+      protokoll(`${fehlen} nicht gesehene${fehlen === 1 ? 'r Dart' : ' Darts'} als Daneben gezählt`);
       for (let i = 0; i < fehlen; i++) dartEingabe(0, { q: 'a' });
       meldung(`${fehlen === 1 ? 'Ein Dart wurde' : fehlen + ' Darts wurden'} nicht gesehen – als Daneben gezählt. Falls falsch: Rückgängig.`);
     }
@@ -2494,6 +2549,7 @@ function kameraEreignis(art, erg) {
 
 // „Darts gezogen“ von Hand (falls die Kamera das Herausziehen nicht bemerkt hat)
 function scheibeLeer() {
+  protokoll('„Darts sind gezogen“ / „Referenzbild neu“ getippt');
   K.ref = null;   // neues Referenzbild, sobald das Bild ruhig ist
   K.seitLeer = 0;
   if (lauf) { lauf.ziehen = false; laufSpeichern(); }
@@ -2897,6 +2953,9 @@ function renderKamera() {
       <button class="btn" data-a="scheibeLeer" ${K.aktiv ? '' : 'disabled'}>Referenzbild neu (Scheibe leer)</button>
       <label><input type="checkbox" data-c="kamDiff" ${kamEinst.diff ? 'checked' : ''}> Unterschiede rot zeigen</label>
     </div>
+    <div class="zeile abstand"><label><input type="checkbox" data-c="kamAuffuellen" ${kamEinst.auffuellen ? 'checked' : ''}>
+      Beim Herausziehen fehlende Darts als „Daneben“ zählen (Darts neben die Scheibe sieht die Kamera nicht)</label></div>
+    ${protokollHtml()}
     <div class="regler">
       <span>Empfindlichkeit</span><input type="range" min="1" max="10" step="1" value="${kamEinst.empf}" data-c="kamEmpf" aria-label="Empfindlichkeit">
       <b id="wertEmpf">${kamEinst.empf}</b>
@@ -2949,6 +3008,13 @@ function renderKamera() {
   </section>`;
   return h;
 }
+
+function protokollHtml() {
+  return `<details class="tabelle-auf" id="protokollAuf" ${K.protokollOffen ? 'open' : ''}><summary>Was hat die Kamera erkannt? (Protokoll)</summary>
+    <pre id="kameraProtokoll" class="protokoll">${esc(K.protokoll.join('\n') || 'Noch nichts.')}</pre></details>`;
+}
+
+document.addEventListener('toggle', e => { if (e.target.id === 'protokollAuf') K.protokollOffen = e.target.open; }, true);
 
 function zoomRegler(ausfuehrlich) {
   const hw = hwZoomInfo();
@@ -3037,6 +3103,7 @@ function kameraPanel() {
   if (K.aktiv && !geo) h += `<p class="hinweis warnung" style="text-align:center">Scheibe nicht eingerichtet – unter „Kamera“ einrichten. Bis dahin von Hand eingeben.</p>`;
   if (K.fehler) h += `<p class="hinweis warnung" style="text-align:center">${esc(K.fehler)}</p>`;
   if (K.aktiv && lauf && lauf.ziehen) h += `<div class="zeile mitte"><button class="btn klein" data-a="scheibeLeer">Darts sind gezogen</button></div>`;
+  if (K.aktiv) h += protokollHtml();
   return h;
 }
 
@@ -3170,6 +3237,7 @@ document.addEventListener('change', e => {
   else if (c === 'kameraWahl') { if (e.target.value) kameraStarten(e.target.value, true); }
   else if (c === 'kamNetz') { kamEinst.netz = e.target.checked; kamSpeichern(); }
   else if (c === 'kamDiff') { kamEinst.diff = e.target.checked; K.diffBild = null; kamSpeichern(); }
+  else if (c === 'kamAuffuellen') { kamEinst.auffuellen = e.target.checked; kamSpeichern(); }
   else if (c === 'kamTon') { kamEinst.ton = e.target.value; kamSpeichern(); tonSpielen(true); render(); }
   else if (c === 'kamRichtung') { kamEinst.richtung = e.target.value; kamSpeichern(); }
   else if (c === 'kamKnapp') { kamEinst.knapp = Number(e.target.value); kamSpeichern(); }
