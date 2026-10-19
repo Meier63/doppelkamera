@@ -1704,6 +1704,11 @@ async function dateiLaden() {
 document.addEventListener('input', e => {
   const c = e.target.dataset && e.target.dataset.c;
   if (c === 'kamZoom') zoomAendern(Number(e.target.value));
+  else if (c === 'kamLaut') {
+    kamEinst.lautst = Number(e.target.value);
+    document.getElementById('wertLaut').textContent = Math.round(kamEinst.lautst * 100) + ' %';
+    kamSpeichern();
+  }
   else if (c === 'kamHwZoom') {
     kamEinst.hwZoom = Number(e.target.value);
     document.getElementById('wertHwZoom').textContent = String(kamEinst.hwZoom.toFixed(1)).replace('.', ',') + '×';
@@ -1868,7 +1873,8 @@ let kamEinst = Object.assign({
   punkte: null, seitenverh: null,      // 4 Einrichtpunkte im Bild (0–1) und Bildformat beim Einrichten
   empf: 6, ruhe: 400,                  // Empfindlichkeit 1–10, Ruhezeit in ms
   richtung: 'auto', gelernt: null,     // wohin die Flights im Bild zeigen (gelernt: Mittel aus eindeutigen Darts)
-  zoom: 1, hwZoom: null,               // digitaler Zoom (Ausschnitt um die Scheibe, 1–4×) und Zoom der Kamera selbst
+  zoom: 1, hwZoom: null,
+  ton: 'zweiton', lautst: 0.6,         // Ton bei erkanntem Dart (siehe TOENE) und Lautstärke 0–1               // digitaler Zoom (Ausschnitt um die Scheibe, 1–4×) und Zoom der Kamera selbst
   netz: true, diff: false, knapp: 2    // Netz/Unterschied im Bild zeigen; „knapp“ ab so vielen mm am Feldrand
 }, lsLesen(LS.kamera) || {});
 const kamSpeichern = () => lsSchreiben(LS.kamera, kamEinst);
@@ -2375,20 +2381,75 @@ function kameraWartetAufZiehen() {
   return K.seitLeer >= 3;
 }
 
+// ---------- Kamera: Ton bei erkanntem Dart (wird im Browser erzeugt, keine Tondatei) ----------
+
+const TOENE = {
+  zweiton: 'Treffer hoch, Daneben tief',
+  piep: 'Piep',
+  doppelpiep: 'Doppel-Piep',
+  klick: 'Klick',
+  glocke: 'Glocke',
+  dingdong: 'Ding-Dong',
+  aus: 'Aus'
+};
+let audio = null;
+function audioKontext() {
+  const AC = window.AudioContext || window.webkitAudioContext;
+  if (!AC) return null;
+  if (!audio) audio = new AC();
+  if (audio.state === 'suspended') audio.resume().catch(() => {});
+  return audio;
+}
+// Safari/iPad spielt Töne erst nach einer Berührung der Seite: beim ersten Tippen freischalten
+document.addEventListener('pointerdown', () => { if (kamEinst.ton !== 'aus' && (!audio || audio.state !== 'running')) audioKontext(); }, true);
+
+// ein Ton: Frequenz (Hz), Beginn und Dauer (s), Wellenform, Lautstärke 0–1
+function klang(ctx, f, ab, dauer, form, laut) {
+  const t = ctx.currentTime + ab, o = ctx.createOscillator(), g = ctx.createGain();
+  o.type = form;
+  o.frequency.setValueAtTime(f, t);
+  g.gain.setValueAtTime(0.0001, t);
+  g.gain.exponentialRampToValueAtTime(Math.max(0.0002, laut), t + 0.005);
+  g.gain.exponentialRampToValueAtTime(0.0001, t + dauer);
+  o.connect(g).connect(ctx.destination);
+  o.start(t);
+  o.stop(t + dauer + 0.02);
+}
+
+// treffer: true/false im Training, null beim Testen auf der Kamera-Seite
+function tonSpielen(treffer, art = kamEinst.ton) {
+  if (art === 'aus') return;
+  const ctx = audioKontext();
+  if (!ctx) return;
+  const v = Math.min(1, Math.max(0, kamEinst.lautst)) * 0.5;
+  if (!v) return;
+  switch (art) {
+    case 'piep': klang(ctx, 880, 0, 0.12, 'sine', v); break;
+    case 'doppelpiep': klang(ctx, 990, 0, 0.07, 'sine', v); klang(ctx, 990, 0.1, 0.07, 'sine', v); break;
+    case 'klick': klang(ctx, 1800, 0, 0.03, 'square', v * 0.5); klang(ctx, 600, 0, 0.04, 'triangle', v * 0.6); break;
+    case 'glocke': klang(ctx, 1320, 0, 0.6, 'sine', v); klang(ctx, 2640, 0, 0.3, 'sine', v * 0.35); klang(ctx, 3960, 0, 0.15, 'sine', v * 0.15); break;
+    case 'dingdong': klang(ctx, 784, 0, 0.25, 'sine', v); klang(ctx, 622, 0.18, 0.35, 'sine', v); break;
+    default:   // zweiton
+      if (treffer === false) klang(ctx, 300, 0, 0.18, 'triangle', v);
+      else { klang(ctx, 660, 0, 0.09, 'sine', v); klang(ctx, 990, 0.09, 0.14, 'sine', v); }
+  }
+}
+
 function kameraEreignis(art, erg) {
   const L = lauf;
   if (art === 'dart') {
     if (kameraImSpiel() && ansicht !== 'kamera') {
       if (L.pause || !erg.feld) { statusAktualisieren(); return; }
-      const ziel = L.felder[L.idx];
-      dartEingabe(trifft(erg.feld, ziel), {
+      const ziel = L.felder[L.idx], treffer = trifft(erg.feld, ziel);
+      tonSpielen(treffer);
+      dartEingabe(treffer, {
         q: 'k', f: erg.feld.name, x: Math.round(erg.bx * 10) / 10, y: Math.round(erg.by * 10) / 10,
         nx: erg.nx, ny: erg.ny, knapp: abstandZiel(erg.bx, erg.by, ziel) < kamEinst.knapp || !erg.sicher
       });
       return;
     }
     K.testPunkte = K.testPunkte.concat([erg]).slice(-3);
-    if (ansicht === 'kamera') render();
+    if (ansicht === 'kamera') { tonSpielen(null); render(); }
     return;
   }
   // gezogen
@@ -2828,6 +2889,23 @@ function renderKamera() {
       hier die Richtung einstellen, in die die Flights im Kamerabild zeigen. Liegt ein Treffer näher als „knapp“ am Feldrand, wird um Prüfung gebeten.</p>
   </section>`;
 
+  h += `<section class="karte"><h2>4. Ton bei erkanntem Dart</h2>
+    <div class="zeile">
+      <select data-c="kamTon" aria-label="Ton">${Object.entries(TOENE).map(([k, v]) =>
+        `<option value="${k}" ${kamEinst.ton === k ? 'selected' : ''}>${v}</option>`).join('')}</select>
+      ${kamEinst.ton === 'zweiton'
+        ? '<button class="btn" data-a="tonProbe" data-w="1">▶ Treffer</button><button class="btn" data-a="tonProbe" data-w="0">▶ Daneben</button>'
+        : `<button class="btn" data-a="tonProbe" data-w="1" ${kamEinst.ton === 'aus' ? 'disabled' : ''}>▶ Probe</button>`}
+    </div>
+    <div class="regler">
+      <span>Lautstärke</span><input type="range" min="0" max="1" step="0.1" value="${kamEinst.lautst}" data-c="kamLaut" aria-label="Lautstärke">
+      <b id="wertLaut">${Math.round(kamEinst.lautst * 100)} %</b>
+    </div>
+    <p class="hinweis">Kurzer Ton, sobald die Kamera einen Dart erkannt hat. Bei „Treffer hoch, Daneben tief“ hört man das Ergebnis,
+      ohne aufs Tablet zu schauen. Am iPad ist nichts zu hören, wenn das Gerät stumm geschaltet ist (Kontrollzentrum); nach dem
+      Öffnen der Seite muss sie einmal angetippt werden, bevor Töne möglich sind.</p>
+  </section>`;
+
   h += `<section class="karte"><h2>Tipps für Kamera und Licht</h2>
     <ul class="tipps">
       <li><b>Schräg von der Seite oder von unten</b>, nicht von vorn: Von vorn verdeckt der Flight die Spitze. Gut sind 30–60° zur Scheibe,
@@ -3010,6 +3088,7 @@ const aktionen = {
   herunterladen: () => herunterladen(),
   dateiLaden: () => dateiLaden(),
   korrigieren: () => korrigieren(),
+  tonProbe: el => tonSpielen(el.dataset.w === '1'),
   zoomPlus: () => zoomAendern(kamEinst.zoom + 0.25),
   zoomMinus: () => zoomAendern(kamEinst.zoom - 0.25),
   zoomScheibe: () => { zoomAufScheibe(); render(); },
@@ -3062,6 +3141,7 @@ document.addEventListener('change', e => {
   else if (c === 'kameraWahl') { if (e.target.value) kameraStarten(e.target.value, true); }
   else if (c === 'kamNetz') { kamEinst.netz = e.target.checked; kamSpeichern(); }
   else if (c === 'kamDiff') { kamEinst.diff = e.target.checked; K.diffBild = null; kamSpeichern(); }
+  else if (c === 'kamTon') { kamEinst.ton = e.target.value; kamSpeichern(); tonSpielen(true); render(); }
   else if (c === 'kamRichtung') { kamEinst.richtung = e.target.value; kamSpeichern(); }
   else if (c === 'kamKnapp') { kamEinst.knapp = Number(e.target.value); kamSpeichern(); }
   else if (c === 'kamEmpf' || c === 'kamRuhe') render();
