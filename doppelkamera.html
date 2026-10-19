@@ -188,6 +188,7 @@ label { display: inline-flex; align-items: center; gap: 8px; }
 .regler input[type=range] { width: 100%; height: 40px; accent-color: var(--gruen); }
 .tipps { margin: 0; padding-left: 20px; }
 .zoom-knoepfe { margin-bottom: 8px; }
+.ziehen-hinweis { font-size: clamp(20px, 4vw, 28px); font-weight: 700; color: var(--gelb); margin: 6px 0 8px; }
 .protokoll { margin: 4px 0 0; padding: 10px; background: var(--karte2); border-radius: 10px; font-size: 14px; white-space: pre-wrap; color: var(--grau); }
 .zoom-knoepfe b { min-width: 52px; text-align: center; }
 .tipps li { margin-bottom: 8px; }
@@ -592,6 +593,8 @@ function renderLauf() {
         <div class="quote-gross">${pct(s.quote)}</div>
       </section>
       ${L.eingabe === 'kamera' ? renderErgebnis() : ''}
+      ${L.eingabe === 'kamera' && kamEinst.autoWeiter && K.aktiv
+        ? `<div class="ziehen-hinweis" style="text-align:center">Darts ziehen – danach geht es von selbst weiter zu ${feldName(L.felder[L.idx + 1])}</div>` : ''}
       <button class="btn primaer gross" data-a="weiter">Weiter zu ${feldName(L.felder[L.idx + 1])} ›</button>
       <div class="zeile mitte abstand">
         <button class="btn" data-a="rueck">↶ Rückgängig</button>
@@ -630,15 +633,21 @@ function renderLauf() {
     const n = L.darts.length;
     const t = L.darts.reduce((a, b) => a + b, 0);
     const fertigeDg = inDurchgaenge(L.darts.slice(0, Math.floor(n / 3) * 3));
-    const imDg = L.darts.slice(Math.floor(n / 3) * 3);
+    // Kamera: Nach dem 3. Dart bleibt die fertige Aufnahme stehen, bis die Darts gezogen sind
+    const zieht = L.eingabe === 'kamera' && L.ziehen && n > 0 && n % 3 === 0;
+    const imDg = zieht ? L.darts.slice(n - 3) : L.darts.slice(Math.floor(n / 3) * 3);
     let chips = fertigeDg.map(x => `<span class="chip t${x}">${x}</span>`).join('');
     for (let i = fertigeDg.length + 1; i < L.durchgaenge; i++) chips += `<span class="chip leer">·</span>`;
     const punkte = [0, 1, 2].map(i => `<span class="dart-punkt ${i < imDg.length ? (imDg[i] ? 'hit' : 'miss') : (i === imDg.length ? 'jetzt' : '')}"></span>`).join('');
     const karte = `<section class="karte anzeige ${L.eingabe === 'kamera' ? 'kompakt' : ''}">
         <div class="info">${name}${feldText}</div>
         <div class="feld">${fname}</div>
-        <div class="info">Durchgang <b style="color:var(--text)">${fertigeDg.length + 1}</b> von ${L.durchgaenge} · Dart <b style="color:var(--text)">${imDg.length + 1}</b></div>
-        <div class="dart-punkte">${punkte}</div>
+        ${zieht
+          ? `<div class="info">Durchgang <b style="color:var(--text)">${fertigeDg.length}</b> von ${L.durchgaenge} fertig</div>
+             <div class="dart-punkte">${punkte}</div>
+             <div class="ziehen-hinweis">Darts ziehen – danach geht es von selbst weiter</div>`
+          : `<div class="info">Durchgang <b style="color:var(--text)">${fertigeDg.length + 1}</b> von ${L.durchgaenge} · Dart <b style="color:var(--text)">${imDg.length + 1}</b></div>
+             <div class="dart-punkte">${punkte}</div>`}
         <div class="stand">${t} Treffer <span class="grau">aus ${n} Darts${n ? ' · ' + pct(t / n) : ''}</span></div>
         <div class="chips">${chips}</div>
       </section>`;
@@ -1876,7 +1885,7 @@ let kamEinst = Object.assign({
   richtung: 'auto', gelernt: null,     // wohin die Flights im Bild zeigen (gelernt: Mittel aus eindeutigen Darts)
   zoom: 1, hwZoom: null,
   ton: 'zweiton', lautst: 0.6,
-  auffuellen: true,                    // beim Herausziehen fehlende Darts des Durchgangs als Daneben zählen         // Ton bei erkanntem Dart (siehe TOENE) und Lautstärke 0–1               // digitaler Zoom (Ausschnitt um die Scheibe, 1–4×) und Zoom der Kamera selbst
+  auffuellen: true, autoWeiter: true, tonZiehen: true,   // nach dem Ziehen: automatisch zum nächsten Feld, kurzer Ton                    // beim Herausziehen fehlende Darts des Durchgangs als Daneben zählen         // Ton bei erkanntem Dart (siehe TOENE) und Lautstärke 0–1               // digitaler Zoom (Ausschnitt um die Scheibe, 1–4×) und Zoom der Kamera selbst
   netz: true, diff: false, knapp: 2    // Netz/Unterschied im Bild zeigen; „knapp“ ab so vielen mm am Feldrand
 }, lsLesen(LS.kamera) || {});
 const kamSpeichern = () => lsSchreiben(LS.kamera, kamEinst);
@@ -2516,6 +2525,17 @@ function tonSpielen(treffer, art = kamEinst.ton) {
   }
 }
 
+// leiser „Weiter“-Ton, wenn die Darts gezogen sind
+function tonGezogen() {
+  if (kamEinst.ton === 'aus' || !kamEinst.tonZiehen) return;
+  const ctx = audioKontext();
+  if (!ctx) return;
+  const v = Math.min(1, Math.max(0, kamEinst.lautst)) * 0.3;
+  if (!v) return;
+  klang(ctx, 523, 0, 0.07, 'sine', v);
+  klang(ctx, 784, 0.08, 0.1, 'sine', v);
+}
+
 function kameraEreignis(art, erg) {
   const L = lauf;
   if (art === 'dart') {
@@ -2535,16 +2555,34 @@ function kameraEreignis(art, erg) {
   }
   // gezogen
   K.testPunkte = [];
-  if (kameraImSpiel()) {
-    const fehlen = L.pause ? 0 : (3 - L.darts.length % 3) % 3;
-    if (fehlen && L.darts.length % 3 && kamEinst.auffuellen) {
-      protokoll(`${fehlen} nicht gesehene${fehlen === 1 ? 'r Dart' : ' Darts'} als Daneben gezählt`);
-      for (let i = 0; i < fehlen; i++) dartEingabe(0, { q: 'a' });
-      meldung(`${fehlen === 1 ? 'Ein Dart wurde' : fehlen + ' Darts wurden'} nicht gesehen – als Daneben gezählt. Falls falsch: Rückgängig.`);
-    }
-    if (lauf) { lauf.ziehen = false; laufSpeichern(); }
-    render();
-  } else if (ansicht === 'kamera') render();
+  if (kameraImSpiel()) aufnahmeBeendet(kamEinst.auffuellen);
+  else if (ansicht === 'kamera') { tonGezogen(); render(); }
+}
+
+// Darts gezogen: fehlende Darts ergänzen (falls gewünscht), nächste Aufnahme bzw. nächstes Feld
+function aufnahmeBeendet(auffuellen) {
+  const L = lauf;
+  if (!L || L.fertig) return;
+  const fehlen = L.pause ? 0 : (3 - L.darts.length % 3) % 3;
+  if (fehlen && auffuellen) {
+    protokoll(`${fehlen} nicht gesehene${fehlen === 1 ? 'r Dart' : ' Darts'} als Daneben gezählt`);
+    for (let i = 0; i < fehlen; i++) dartEingabe(0, { q: 'a' });
+    meldung(`${fehlen === 1 ? 'Ein Dart wurde' : fehlen + ' Darts wurden'} nicht gesehen – als Daneben gezählt. Falls falsch: Rückgängig.`);
+  }
+  if (!lauf || lauf.fertig) { render(); return; }
+  lauf.ziehen = false;
+  if (lauf.pause && kamEinst.autoWeiter) {
+    // Feld fertig und Darts gezogen: gleich zum nächsten Feld
+    lauf.idx++;
+    lauf.pause = false;
+    protokoll(`Weiter zu ${feldName(lauf.felder[lauf.idx])}`);
+    meldung(`Weiter mit ${feldName(lauf.felder[lauf.idx])}.`);
+  } else if (!lauf.pause) {
+    protokoll(`Nächste Aufnahme: Durchgang ${Math.floor(lauf.darts.length / 3) + 1}`);
+  }
+  tonGezogen();
+  laufSpeichern();
+  render();
 }
 
 // „Darts gezogen“ von Hand (falls die Kamera das Herausziehen nicht bemerkt hat)
@@ -2552,8 +2590,9 @@ function scheibeLeer() {
   protokoll('„Darts sind gezogen“ / „Referenzbild neu“ getippt');
   K.ref = null;   // neues Referenzbild, sobald das Bild ruhig ist
   K.seitLeer = 0;
-  if (lauf) { lauf.ziehen = false; laufSpeichern(); }
   K.testPunkte = [];
+  if (kameraImSpiel() && ansicht !== 'kamera') { aufnahmeBeendet(false); return; }   // von Hand: nichts auffüllen
+  if (lauf) { lauf.ziehen = false; laufSpeichern(); }
   render();
 }
 
@@ -2955,6 +2994,8 @@ function renderKamera() {
     </div>
     <div class="zeile abstand"><label><input type="checkbox" data-c="kamAuffuellen" ${kamEinst.auffuellen ? 'checked' : ''}>
       Beim Herausziehen fehlende Darts als „Daneben“ zählen (Darts neben die Scheibe sieht die Kamera nicht)</label></div>
+    <div class="zeile abstand"><label><input type="checkbox" data-c="kamAutoWeiter" ${kamEinst.autoWeiter ? 'checked' : ''}>
+      Ist ein Doppelfeld fertig: nach dem Ziehen der Darts von selbst zum nächsten Feld</label></div>
     ${protokollHtml()}
     <div class="regler">
       <span>Empfindlichkeit</span><input type="range" min="1" max="10" step="1" value="${kamEinst.empf}" data-c="kamEmpf" aria-label="Empfindlichkeit">
@@ -2984,6 +3025,9 @@ function renderKamera() {
         : `<button class="btn" data-a="tonProbe" data-w="1" ${kamEinst.ton === 'aus' ? 'disabled' : ''}>▶ Probe</button>`}
     </div>
     <p id="tonStatus" class="hinweis ${/^✓/.test(tonStatusText()) ? 'ok' : 'warnung'}">${tonStatusText()}</p>
+    <div class="zeile"><label><input type="checkbox" data-c="kamTonZiehen" ${kamEinst.tonZiehen ? 'checked' : ''}>
+      Kurzer Ton, wenn die Darts gezogen sind und es weitergeht</label>
+      <button class="btn klein" data-a="tonZiehenProbe" ${kamEinst.ton === 'aus' ? 'disabled' : ''}>▶</button></div>
     <div class="regler">
       <span>Lautstärke</span><input type="range" min="0" max="1" step="0.1" value="${kamEinst.lautst}" data-c="kamLaut" aria-label="Lautstärke">
       <b id="wertLaut">${Math.round(kamEinst.lautst * 100)} %</b>
@@ -3184,6 +3228,7 @@ const aktionen = {
   herunterladen: () => herunterladen(),
   dateiLaden: () => dateiLaden(),
   korrigieren: () => korrigieren(),
+  tonZiehenProbe: () => { tonFreischalten(); const a = kamEinst.tonZiehen; kamEinst.tonZiehen = true; tonGezogen(); kamEinst.tonZiehen = a; },
   tonProbe: el => { tonFreischalten(); tonSpielen(el.dataset.w === '1'); setTimeout(tonStatusZeigen, 300); },
   zoomPlus: () => zoomAendern(kamEinst.zoom + 0.25),
   zoomMinus: () => zoomAendern(kamEinst.zoom - 0.25),
@@ -3238,6 +3283,8 @@ document.addEventListener('change', e => {
   else if (c === 'kamNetz') { kamEinst.netz = e.target.checked; kamSpeichern(); }
   else if (c === 'kamDiff') { kamEinst.diff = e.target.checked; K.diffBild = null; kamSpeichern(); }
   else if (c === 'kamAuffuellen') { kamEinst.auffuellen = e.target.checked; kamSpeichern(); }
+  else if (c === 'kamAutoWeiter') { kamEinst.autoWeiter = e.target.checked; kamSpeichern(); }
+  else if (c === 'kamTonZiehen') { kamEinst.tonZiehen = e.target.checked; kamSpeichern(); }
   else if (c === 'kamTon') { kamEinst.ton = e.target.value; kamSpeichern(); tonSpielen(true); render(); }
   else if (c === 'kamRichtung') { kamEinst.richtung = e.target.value; kamSpeichern(); }
   else if (c === 'kamKnapp') { kamEinst.knapp = Number(e.target.value); kamSpeichern(); }
