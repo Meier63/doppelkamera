@@ -1,0 +1,3018 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f1412">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Doppel Kamera">
+<title>Doppel 15 Kamera</title>
+<script>
+// App-Symbol und Offline-Start nur, wenn das Spiel über eine Webadresse läuft (nicht per Doppelklick).
+if (/^https?:$/.test(location.protocol)) {
+  [['manifest', 'manifest.json'], ['apple-touch-icon', 'apple-touch-icon.png'], ['icon', 'icon-192.png']].forEach(([rel, href]) => {
+    const l = document.createElement('link');
+    l.rel = rel;
+    l.href = href;
+    document.head.appendChild(l);
+  });
+  if ('serviceWorker' in navigator) {
+    window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+  }
+}
+</script>
+<style>
+:root {
+  --bg: #0f1412;
+  --karte: #18211c;
+  --karte2: #222d27;
+  --linie: #2f3e36;
+  --text: #f3f6f4;
+  --grau: #9db0a6;
+  --gruen: #22a45d;
+  --gruen-d: #1a7f48;
+  --rot: #e04848;
+  --gelb: #f2c230;
+  --radius: 14px;
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  font-size: 18px;
+  line-height: 1.4;
+}
+button, input, select { font: inherit; color: inherit; }
+
+header {
+  position: sticky; top: 0; z-index: 10;
+  background: var(--bg);
+  border-bottom: 1px solid var(--linie);
+  padding-top: env(safe-area-inset-top);
+}
+.kopf { display: flex; align-items: center; gap: 12px; max-width: 1100px; margin: 0 auto; padding: 8px 16px; }
+.logo { font-weight: 800; font-size: 22px; white-space: nowrap; }
+.logo span { color: var(--rot); }
+nav { display: flex; gap: 4px; margin-left: auto; overflow-x: auto; }
+nav button {
+  background: none; border: 0; padding: 10px 14px; border-radius: 10px;
+  color: var(--grau); font-weight: 600; cursor: pointer; position: relative; white-space: nowrap;
+}
+nav button.aktiv { background: var(--karte2); color: var(--text); }
+nav .punkt { position: absolute; top: 6px; right: 5px; width: 9px; height: 9px; border-radius: 50%; background: var(--gelb); }
+@media (max-width: 560px) {
+  .logo { display: none; }
+  nav { margin-left: 0; width: 100%; justify-content: space-between; }
+  nav button { flex: 1; padding: 10px 2px; font-size: 15px; }
+}
+
+main { max-width: 1100px; margin: 0 auto; padding: 16px 16px 48px; }
+.karte { background: var(--karte); border: 1px solid var(--linie); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+h2 { font-size: 20px; margin: 0 0 12px; }
+.grau { color: var(--grau); }
+.hinweis { color: var(--grau); font-size: 15px; margin: 10px 0 0; }
+.warnung { color: var(--gelb); }
+.ok { color: #6fdc9c; }
+
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+  min-height: 52px; padding: 10px 18px; border-radius: 12px;
+  border: 1px solid var(--linie); background: var(--karte2);
+  font-weight: 600; cursor: pointer; touch-action: manipulation;
+  user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent;
+}
+.btn:active { transform: scale(.97); }
+.btn.primaer { background: var(--gruen); border-color: var(--gruen); color: #fff; }
+.btn.gefahr { background: transparent; border-color: #6b2c2c; color: #ff8a8a; }
+.btn.klein { min-height: 42px; padding: 6px 12px; font-size: 16px; }
+.btn.an { background: var(--gruen-d); border-color: #3ccf7f; color: #fff; }
+.btn.gross { width: 100%; min-height: 72px; font-size: 22px; }
+.btn:disabled { opacity: .4; cursor: not-allowed; transform: none; }
+
+.zeile { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.zeile.mitte { justify-content: center; }
+.zeile.abstand { margin-top: 12px; }
+
+input[type=text], input[type=number], input[type=date], select {
+  background: var(--karte2); border: 1px solid var(--linie); border-radius: 10px;
+  padding: 10px 12px; min-height: 52px;
+}
+input[type=text] { flex: 1; min-width: 180px; }
+input[type=checkbox] { width: 24px; height: 24px; accent-color: var(--gruen); }
+label { display: inline-flex; align-items: center; gap: 8px; }
+
+/* Einrichtung */
+.raster-felder { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; }
+.raster-felder .btn { min-height: 58px; padding: 6px; font-size: 20px; }
+@media (max-width: 560px) {
+  .raster-felder { grid-template-columns: repeat(5, 1fr); }
+  .raster-felder .bull { grid-column: 1 / -1; }
+}
+.zahl { display: inline-flex; align-items: center; gap: 6px; }
+.zahl input { width: 90px; text-align: center; font-size: 22px; font-weight: 700; }
+.zahl .btn { width: 52px; font-size: 26px; padding: 0; }
+
+/* Laufendes Training */
+.anzeige { text-align: center; }
+.anzeige .info { font-size: clamp(18px, 3.6vw, 26px); color: var(--grau); }
+.anzeige .feld { font-size: clamp(76px, 20vw, 170px); font-weight: 800; line-height: 1.05; color: var(--gelb); }
+.anzeige .stand { font-size: clamp(26px, 6vw, 46px); font-weight: 700; margin: 4px 0 10px; }
+.anzeige .quote-gross { font-size: clamp(56px, 14vw, 110px); font-weight: 800; color: var(--gelb); line-height: 1.1; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; }
+.chip { min-width: 38px; padding: 4px 10px; border-radius: 999px; background: var(--karte2); border: 1px solid var(--linie); font-weight: 700; }
+.chip.leer { color: #4c5d54; }
+.chip.t0 { color: var(--grau); }
+.chip.t1, .chip.t2, .chip.t3 { color: #6fdc9c; border-color: var(--gruen-d); }
+.frage { text-align: center; font-size: 20px; color: var(--grau); margin-top: 8px; }
+.treffer-knoepfe { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin: 12px 0 16px; }
+.treffer-knoepfe .btn { min-height: clamp(96px, 22vh, 190px); font-size: clamp(46px, 11vw, 88px); font-weight: 800; }
+.treffer-knoepfe .t0 { background: #2a1f1f; border-color: #5a3434; }
+.treffer-knoepfe .t1 { background: #1b3326; border-color: #2c6b48; }
+.treffer-knoepfe .t2 { background: #1a4a30; border-color: #2f8c57; }
+.treffer-knoepfe .t3 { background: #1d6b40; border-color: #3ccf7f; }
+.treffer-knoepfe.zwei { grid-template-columns: 1fr 1fr; }
+.treffer-knoepfe.zwei .btn { font-size: clamp(30px, 7vw, 56px); }
+.dart-punkte { display: flex; gap: 14px; justify-content: center; margin: 10px 0 4px; }
+.dart-punkt { width: 30px; height: 30px; border-radius: 50%; border: 2px solid #4c5d54; }
+.dart-punkt.jetzt { border-color: var(--gelb); box-shadow: 0 0 0 3px rgba(242,194,48,.25); }
+.dart-punkt.hit { background: var(--gruen); border-color: #3ccf7f; }
+.dart-punkt.miss { background: #5a3434; border-color: #7a4444; }
+.zahlen-raster { display: grid; grid-template-columns: repeat(auto-fill, minmax(76px, 1fr)); gap: 10px; margin: 12px 0 16px; }
+.zahlen-raster .btn { min-height: 72px; font-size: 30px; font-weight: 800; }
+.zahlen-raster .null { background: #2a1f1f; border-color: #5a3434; }
+.zahlen-raster .gut { background: #1b3326; border-color: #2c6b48; }
+.eingabe-wahl { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
+@media (max-width: 900px) { .eingabe-wahl { grid-template-columns: 1fr 1fr; } }
+.eingabe-wahl .btn { flex-direction: column; gap: 2px; min-height: 76px; }
+.eingabe-wahl .btn small { font-weight: 400; font-size: 14px; opacity: .8; }
+@media (max-width: 560px) { .eingabe-wahl { grid-template-columns: 1fr; } }
+
+/* Kamera */
+.logo small { font-size: 14px; color: var(--grau); font-weight: 600; }
+.kamera-video { position: fixed; left: 0; bottom: 0; width: 2px; height: 2px; opacity: .01; pointer-events: none; }
+.kamerabild { display: block; width: 100%; background: #000; border-radius: 10px; }
+.kamerabild.einrichten { touch-action: none; cursor: crosshair; }
+.kamera-leer { aspect-ratio: 16 / 9; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+  background: #0b100d; border: 1px dashed var(--linie); border-radius: 10px; color: var(--grau); padding: 16px; }
+.kamera-status { margin: 8px 0; color: var(--grau); font-size: 17px; text-align: center; min-height: 1.4em; }
+.kamera-lauf { display: grid; grid-template-columns: 1fr; gap: 0 16px; align-items: start; }
+@media (min-width: 900px) { .kamera-lauf { grid-template-columns: 1fr 1fr; } }
+.ergebnis { text-align: center; border-radius: var(--radius); padding: 14px; margin-bottom: 16px; border: 2px solid var(--linie); background: var(--karte); }
+.ergebnis.treffer { background: #143b25; border-color: #3ccf7f; }
+.ergebnis.daneben { background: #2a1f1f; border-color: #7a4444; }
+.ergebnis.leer { color: var(--grau); border: 1px dashed var(--linie); font-size: 18px; padding: 22px 14px; }
+.anzeige.kompakt { padding: 10px 12px; }
+.anzeige.kompakt .feld { font-size: clamp(64px, 11vw, 120px); }
+.anzeige.kompakt .stand { font-size: clamp(22px, 4vw, 34px); margin: 2px 0 6px; }
+.anzeige.kompakt .dart-punkte { margin: 6px 0 2px; }
+.erg-text { font-size: clamp(44px, 10vw, 84px); font-weight: 800; line-height: 1.05; }
+.ergebnis.treffer .erg-text { color: #6fdc9c; }
+.ergebnis.daneben .erg-text { color: #ff8a8a; }
+.erg-info { font-size: 20px; margin: 4px 0 10px; }
+.ergebnis .btn { min-height: 64px; font-size: 22px; padding: 10px 26px; }
+.treffer-knoepfe.hand { margin-top: 4px; }
+.treffer-knoepfe.hand .btn { min-height: 84px; font-size: clamp(26px, 5vw, 38px); }
+.eich-anleitung { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; margin-top: 12px; }
+.eich-anleitung > div { flex: 1; min-width: 220px; }
+.eich-schritt { font-size: 22px; font-weight: 700; color: var(--gelb); }
+.justier { display: flex; flex-wrap: wrap; gap: 16px; align-items: center; margin-top: 12px; }
+.pfeile { display: grid; grid-template-columns: repeat(3, 64px); gap: 6px; }
+.pfeile .btn { min-height: 56px; padding: 0; font-size: 20px; }
+.pfeile .btn.primaer { font-size: 15px; }
+.regler { display: grid; grid-template-columns: auto 1fr 70px; gap: 6px 12px; align-items: center; margin-top: 14px; }
+.regler input[type=range] { width: 100%; height: 40px; accent-color: var(--gruen); }
+.tipps { margin: 0; padding-left: 20px; }
+.tipps li { margin-bottom: 8px; }
+
+/* Statistik */
+.kacheln { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 16px; }
+@media (max-width: 640px) { .kacheln { grid-template-columns: repeat(2, 1fr); } }
+.kachel { background: var(--karte); border: 1px solid var(--linie); border-radius: var(--radius); padding: 14px 8px; text-align: center; }
+.kachel b { display: block; font-size: clamp(24px, 5vw, 32px); }
+.kachel span { color: var(--grau); font-size: 15px; }
+.karte .kacheln { margin-bottom: 0; }
+.karte .kachel { background: var(--karte2); }
+.segment { display: flex; flex-wrap: wrap; gap: 6px; }
+.tabelle { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 9px 8px; text-align: left; border-bottom: 1px solid var(--linie); vertical-align: middle; }
+th { color: var(--grau); font-weight: 600; font-size: 15px; }
+td.z, th.z { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td.feldname { font-weight: 700; white-space: nowrap; }
+td.detail { color: var(--grau); font-size: 15px; letter-spacing: .5px; }
+tr.leer td { color: #5d6f65; }
+.balken { height: 14px; background: var(--karte2); border-radius: 7px; overflow: hidden; min-width: 70px; }
+.balken i { display: block; height: 100%; border-radius: 7px; }
+td.b { width: 32%; }
+@media (max-width: 560px) {
+  th, td { padding: 9px 4px; }
+  .balken { min-width: 32px; }
+}
+.kopfzeile { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.kopfzeile h2 { margin: 0; }
+
+/* Diagramme */
+.diagramm { width: 100%; margin: 4px 0 8px; }
+.diagramm svg { display: block; overflow: visible; }
+.diagramm text { font-family: inherit; }
+.diagramm .achse { fill: #8a968f; font-size: 12px; font-variant-numeric: tabular-nums; }
+.diagramm .achse.leer { fill: #4c5d54; }
+.diagramm .wert { fill: var(--text); font-size: 13px; font-weight: 700; }
+.diagramm .name { fill: var(--text); font-size: 15px; font-weight: 600; }
+.diagramm .gitter { stroke: #26322b; stroke-width: 1; }
+.diagramm .grundlinie { stroke: #3d4d44; stroke-width: 1; }
+.diagramm .linie { fill: none; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.diagramm .punkt { stroke: var(--karte); stroke-width: 2; }
+.diagramm .treffer-flaeche { fill: transparent; }
+.diagramm .kreuz { stroke: #8a968f; stroke-width: 1; opacity: 0; }
+.diagramm .spalte:hover .kreuz, .diagramm .spalte:focus .kreuz { opacity: 1; }
+.diagramm .marke:hover path, .diagramm .marke:focus path { filter: brightness(1.25); }
+.diagramm g:focus { outline: none; }
+.diagramm g:focus-visible .treffer-flaeche { fill: rgba(255,255,255,.05); }
+.legende { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 8px; font-size: 15px; color: var(--text); }
+.legende i { display: inline-block; width: 16px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+.tip { position: fixed; z-index: 150; pointer-events: none; background: #0b100d; border: 1px solid var(--linie); border-radius: 10px;
+  padding: 8px 12px; font-size: 15px; box-shadow: 0 8px 24px rgba(0,0,0,.5); max-width: 260px; }
+.tip i { display: inline-block; width: 14px; height: 3px; border-radius: 2px; vertical-align: middle; margin-right: 6px; }
+.tip span { color: var(--grau); }
+details.tabelle-auf { margin-top: 6px; }
+details.tabelle-auf summary { cursor: pointer; color: var(--grau); font-size: 15px; padding: 6px 0; }
+
+/* Spieler */
+.spieler-zeile { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; padding: 12px 0; border-bottom: 1px solid var(--linie); }
+.spieler-zeile:last-child { border-bottom: 0; }
+.spieler-zeile b { font-size: 20px; }
+
+select.spielerwahl { flex: 1; min-width: 220px; max-width: 480px; font-size: 22px; font-weight: 700; min-height: 60px; }
+.banner { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;
+  background: #2b2610; border: 1px solid #6b5a14; color: var(--gelb); border-radius: var(--radius); padding: 10px 14px; margin-bottom: 16px; }
+
+/* Dialog und Meldung */
+.overlay { position: fixed; inset: 0; background: rgba(0,0,0,.65); display: flex; align-items: center; justify-content: center; padding: 16px; z-index: 100; }
+.dialog { background: var(--karte); border: 1px solid var(--linie); border-radius: var(--radius); padding: 20px; max-width: 480px; width: 100%; }
+.dialog p { margin: 0 0 16px; white-space: pre-line; }
+.dialog input { width: 100%; margin-bottom: 16px; }
+.dialog .zeile { justify-content: flex-end; }
+.toast {
+  position: fixed; left: 50%; bottom: calc(24px + env(safe-area-inset-bottom)); transform: translateX(-50%);
+  background: var(--karte2); border: 1px solid var(--linie); padding: 12px 18px; border-radius: 12px;
+  z-index: 200; box-shadow: 0 8px 24px rgba(0,0,0,.5); max-width: calc(100% - 32px);
+}
+</style>
+</head>
+<body>
+<header>
+  <div class="kopf">
+    <div class="logo">Doppel <span>15</span> <small>Kamera</small></div>
+    <nav id="nav"></nav>
+  </div>
+</header>
+<main id="main"></main>
+<input type="file" id="dateiInput" accept=".txt,text/plain" hidden>
+<input type="file" id="videoInput" accept="video/*" hidden>
+
+<script>
+'use strict';
+
+// ---------- Grundlagen ----------
+
+const VERSION = 2;                       // Datenformat der txt-Datei
+const DATEINAME = 'doppelkamera-daten.txt';   // eigener Name: Doppel 15 und die Kamera-Fassung überschreiben sich nicht
+const LS = {
+  daten: 'doppelkamera.daten',            // eigene Schlüssel: auf GitHub Pages teilen sich beide Spiele den Browser-Speicher
+  lauf: 'doppelkamera.lauf',
+  einst: 'doppelkamera.einstellung',
+  stat: 'doppelkamera.statistik',
+  meta: 'doppelkamera.meta',
+  kamera: 'doppelkamera.kamera'
+};
+const FELDER = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 25]; // 25 = Bull
+const WOCHENTAGE = ['So', 'Mo', 'Di', 'Mi', 'Do', 'Fr', 'Sa'];
+const MONATE = ['Januar', 'Februar', 'März', 'April', 'Mai', 'Juni', 'Juli', 'August', 'September', 'Oktober', 'November', 'Dezember'];
+const fsOrdner = typeof window.showDirectoryPicker === 'function';   // Chrome/Edge am PC/Mac
+const kannTeilen = (() => {                                            // Handy/Tablet: „In Dateien sichern“
+  try { return !!(navigator.canShare && navigator.canShare({ files: [new File(['x'], 'x.txt', { type: 'text/plain' })] })); }
+  catch (e) { return false; }
+})();
+
+const feldName = f => (f === 25 ? 'Bull' : 'D' + f);
+const pad = n => String(n).padStart(2, '0');
+const fmtDatum = d => `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.${d.getFullYear()}`;
+const fmtZeit = d => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+const zahl = n => n.toLocaleString('de-DE');
+const pct = q => (q == null ? '–' : (q * 100).toFixed(1).replace('.', ',') + ' %');
+const neueId = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+// ---------- Speicher im Browser ----------
+
+let speicherOk = true;
+function lsLesen(k) {
+  try { const s = localStorage.getItem(k); return s ? JSON.parse(s) : null; }
+  catch (e) { speicherOk = false; return null; }
+}
+function lsSchreiben(k, v) {
+  try {
+    if (v == null) localStorage.removeItem(k);
+    else localStorage.setItem(k, JSON.stringify(v));
+  } catch (e) { speicherOk = false; }
+}
+
+// Prüft und bereinigt geladene Daten (aus Browser oder txt-Datei).
+function normalisieren(o) {
+  if (!o || typeof o !== 'object') return null;
+  const spieler = (Array.isArray(o.spieler) ? o.spieler : [])
+    .filter(s => s && s.id && typeof s.name === 'string')
+    .map(s => {
+      const sp = { id: String(s.id), name: s.name.trim() || '?', angelegt: s.angelegt || new Date().toISOString() };
+      if (s.versteckt) sp.versteckt = true;   // aus der Auswahlliste entfernt, Daten bleiben
+      if (Number.isInteger(s.farbe)) sp.farbe = s.farbe;
+      return sp;
+    });
+  const ids = new Set(spieler.map(s => s.id));
+  const trainings = [];
+  for (const t of (Array.isArray(o.trainings) ? o.trainings : [])) {
+    if (!t || !t.id || !ids.has(String(t.spieler)) || !FELDER.includes(Number(t.feld)) || isNaN(Date.parse(t.datum))) continue;
+    const r = { id: String(t.id), runde: String(t.runde || t.id), spieler: String(t.spieler), feld: Number(t.feld), datum: t.datum };
+    if (Array.isArray(t.darts) && t.darts.length >= 3) {
+      r.darts = t.darts.slice(0, Math.floor(t.darts.length / 3) * 3).map(d => (Number(d) ? 1 : 0));
+      r.treffer = inDurchgaenge(r.darts);
+    } else if (Array.isArray(t.treffer) && t.treffer.length) {
+      r.treffer = t.treffer.map(n => Math.max(0, Math.min(3, Math.round(Number(n) || 0))));
+    }
+    if (r.treffer) {
+      r.durchgaenge = r.treffer.length;
+      r.gesamt = r.treffer.reduce((a, b) => a + b, 0);
+    } else {
+      r.durchgaenge = Math.round(Number(t.durchgaenge) || 0);
+      if (r.durchgaenge < 1) continue;
+      r.gesamt = Math.max(0, Math.min(r.durchgaenge * 3, Math.round(Number(t.gesamt) || 0)));
+    }
+    r.eingabe = r.darts ? 'dart' : r.treffer ? 'durchgang' : 'feld';
+    // Kamera-Einträge: zusätzlich erkanntes Feld je Dart und Zahl der Korrekturen (Doppel 15 übergeht diese Angaben)
+    if (r.darts && t.eingabe === 'kamera') {
+      r.eingabe = 'kamera';
+      r.erkannt = r.darts.map((_, i) => (Array.isArray(t.erkannt) && typeof t.erkannt[i] === 'string' ? t.erkannt[i] : null));
+      r.korrigiert = Math.max(0, Math.round(Number(t.korrigiert) || 0));
+    }
+    trainings.push(r);
+  }
+  trainings.sort((a, b) => Date.parse(a.datum) - Date.parse(b.datum));
+  return { spieler, trainings };
+}
+
+let daten = normalisieren(lsLesen(LS.daten)) || { spieler: [], trainings: [] };
+let meta = Object.assign({ ungesichert: false, letzteDatei: null, dateiName: null, autoOrdner: true }, lsLesen(LS.meta) || {});
+let einst = Object.assign({ spieler: null, felder: [20], durchgaenge: 5, reihenfolge: 'auf', eingabeJe: {} }, lsLesen(LS.einst) || {});
+let statF = Object.assign({ spieler: 'alle', zeitraum: 'monat', von: '', bis: '', gruppe: 'tag', sort: 'feld', alle: false }, lsLesen(LS.stat) || {});
+let lauf = lsLesen(LS.lauf);             // laufendes Training
+if (lauf) { lauf.eingabe = lauf.eingabe || 'durchgang'; lauf.darts = lauf.darts || []; lauf.aktuell = lauf.aktuell || []; lauf.info = lauf.info || []; }
+let ansicht = 'training';
+let ordner = null;                       // nur Chrome/Edge: gewählter Speicherordner
+let ordnerRecht = 'prompt';              // granted | prompt | denied
+let neuerSpielerOffen = false;
+let schreibKette = Promise.resolve();
+
+function datenGeaendert() {
+  lsSchreiben(LS.daten, daten);
+  meta.ungesichert = true;
+  lsSchreiben(LS.meta, meta);
+  if (ordner && meta.autoOrdner && ordnerRecht === 'granted') {
+    schreibKette = schreibKette.then(() => inOrdnerSchreiben(true));
+  }
+}
+
+const aktiveSpieler = () => daten.spieler.filter(s => !s.versteckt).sort((a, b) => a.name.localeCompare(b.name, 'de'));
+const laufSpeichern = () => lsSchreiben(LS.lauf, lauf);
+const einstSpeichern = () => lsSchreiben(LS.einst, einst);
+const statSpeichern = () => lsSchreiben(LS.stat, statF);
+
+const spielerName = id => (daten.spieler.find(s => s.id === id) || { name: '?' }).name;
+
+function summe(liste) {
+  let dg = 0, t = 0;
+  for (const r of liste) { dg += r.durchgaenge; t += r.gesamt; }
+  return { dg, darts: dg * 3, treffer: t, quote: dg ? t / (dg * 3) : null };
+}
+
+// Kurzanzeige der Einzelwerte eines Feld-Trainings
+function detailText(r) {
+  if (r.eingabe === 'kamera') return detailText({ darts: r.darts, treffer: r.treffer }) + (r.korrigiert ? ` · ${r.korrigiert}× korr.` : '');
+  if (r.darts) return r.treffer.map((x, i) => r.darts.slice(i * 3, i * 3 + 3).map(d => (d ? '●' : '○')).join('')).join(' ');
+  if (r.treffer) return r.treffer.join(' · ');
+  return 'nur Gesamt';
+}
+
+function balken(q) {
+  const w = q == null ? 0 : Math.round(q * 100);
+  const farbe = q == null ? 'transparent' : q < 0.2 ? 'var(--rot)' : q < 0.35 ? 'var(--gelb)' : 'var(--gruen)';
+  return `<div class="balken"><i style="width:${w}%;background:${farbe}"></i></div>`;
+}
+
+// ---------- Dialog und Meldung ----------
+
+function dialog(text, knoepfe, eingabeWert) {
+  return new Promise(res => {
+    const o = document.createElement('div');
+    o.className = 'overlay';
+    const mitEingabe = eingabeWert !== undefined;
+    o.innerHTML = `<div class="dialog" role="dialog" aria-modal="true">
+      <p>${esc(text)}</p>
+      ${mitEingabe ? `<input type="text" maxlength="30" autocomplete="off" value="${esc(eingabeWert)}">` : ''}
+      <div class="zeile">${knoepfe.map((k, i) => `<button class="btn ${k.art || ''}" data-i="${i}">${esc(k.text)}</button>`).join('')}</div>
+    </div>`;
+    const inp = o.querySelector('input');
+    function fertig(i) {
+      o.remove();
+      document.removeEventListener('keydown', taste, true);
+      const k = knoepfe[i];
+      if (!k || k.wert == null) return res(null);
+      res(mitEingabe ? inp.value : k.wert);
+    }
+    function taste(e) {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); fertig(-1); }
+      else if (e.key === 'Enter' && mitEingabe) { e.preventDefault(); e.stopPropagation(); fertig(knoepfe.length - 1); }
+    }
+    o.addEventListener('click', e => {
+      const b = e.target.closest('button[data-i]');
+      if (b) fertig(Number(b.dataset.i));
+    });
+    document.addEventListener('keydown', taste, true);
+    document.body.appendChild(o);
+    if (inp) { inp.focus(); inp.select(); } else o.querySelector('.btn:last-child').focus();
+  });
+}
+
+let toastTimer = null;
+function meldung(text) {
+  let t = document.querySelector('.toast');
+  if (!t) { t = document.createElement('div'); t.className = 'toast'; document.body.appendChild(t); }
+  t.textContent = text;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => t.remove(), 3500);
+}
+
+// ---------- Bildschirm wach halten (wo der Browser es erlaubt) ----------
+
+let wakeLock = null;
+async function wachHalten(an) {
+  try {
+    if (an && 'wakeLock' in navigator && !wakeLock) {
+      wakeLock = await navigator.wakeLock.request('screen');
+      wakeLock.addEventListener('release', () => { wakeLock = null; });
+    } else if (!an && wakeLock) {
+      await wakeLock.release();
+      wakeLock = null;
+    }
+  } catch (e) { /* nicht unterstützt */ }
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && lauf && !lauf.fertig) wachHalten(true);
+});
+
+// ---------- Darstellung ----------
+
+function renderNav() {
+  const tabs = [['training', 'Training'], ['kamera', 'Kamera'], ['statistik', 'Statistik'], ['spieler', 'Spieler'], ['daten', 'Daten']];
+  document.getElementById('nav').innerHTML = tabs.map(([k, t]) =>
+    `<button class="${ansicht === k ? 'aktiv' : ''}" data-a="tab" data-v="${k}">${t}${
+      k === 'daten' && meta.ungesichert && daten.trainings.length ? '<span class="punkt" title="Nicht in Datei gesichert"></span>' : ''
+    }</button>`).join('');
+}
+
+function render() {
+  renderNav();
+  diagramme = [];
+  tipAus();
+  const main = document.getElementById('main');
+  if (ansicht === 'training') main.innerHTML = lauf ? renderLauf() : renderEinrichtung();
+  else if (ansicht === 'kamera') main.innerHTML = renderKamera();
+  else if (ansicht === 'statistik') main.innerHTML = renderStatistik();
+  else if (ansicht === 'spieler') main.innerHTML = renderSpieler();
+  else main.innerHTML = renderDaten();
+  zeichneDiagramme();
+  kameraVerwalten();
+  statusAktualisieren();
+  if (K.aktiv) bildZeichnen();   // sofort, sonst ist das neue Bild kurz schwarz
+}
+
+function renderEinrichtung() {
+  const sp = aktiveSpieler();
+  if (!sp.find(s => s.id === einst.spieler)) einst.spieler = sp.length ? sp[0].id : null;
+  const nF = einst.felder.length, d = einst.durchgaenge;
+
+  let h = renderOrdnerBanner() + `<section class="karte"><h2>1. Spieler</h2>`;
+  if (sp.length) {
+    h += `<div class="zeile">
+      <select class="spielerwahl" data-c="spielerWahl" aria-label="Spieler">
+        ${sp.map(s => `<option value="${s.id}" ${s.id === einst.spieler && !neuerSpielerOffen ? 'selected' : ''}>${esc(s.name)}</option>`).join('')}
+        <option value="__neu" ${neuerSpielerOffen ? 'selected' : ''}>+ Neuer Spieler …</option>
+      </select>
+      <button class="btn klein" data-a="tab" data-v="spieler">Spieler verwalten</button>
+    </div>`;
+  } else {
+    h += `<p class="grau" style="margin-top:0">Noch kein Spieler angelegt.</p>`;
+  }
+  if (!sp.length || neuerSpielerOffen) {
+    h += `<div class="zeile ${sp.length ? 'abstand' : ''}"><input id="neuName" type="text" placeholder="Name des neuen Spielers" maxlength="30" autocomplete="off">
+      <button class="btn primaer" data-a="spielerNeu">Anlegen</button>
+      ${sp.length ? '<button class="btn" data-a="neuAbbrechen">Abbrechen</button>' : ''}</div>`;
+  }
+  h += `</section>`;
+
+  h += `<section class="karte"><h2>2. Doppelfeld</h2>
+    <div class="raster-felder">${FELDER.map(f =>
+      `<button class="btn ${einst.felder.includes(f) ? 'an' : ''} ${f === 25 ? 'bull' : ''}" data-a="feld" data-f="${f}">${feldName(f)}</button>`).join('')}</div>
+    <div class="zeile abstand">
+      <button class="btn klein" data-a="felderAlle">Alle</button>
+      <button class="btn klein" data-a="felderKeine">Keine</button>
+      ${nF > 1 ? `<span class="grau" style="margin-left:8px">Reihenfolge:</span>
+      <button class="btn klein ${einst.reihenfolge === 'auf' ? 'an' : ''}" data-a="reihenfolge" data-w="auf">der Reihe nach</button>
+      <button class="btn klein ${einst.reihenfolge === 'zufall' ? 'an' : ''}" data-a="reihenfolge" data-w="zufall">zufällig</button>` : ''}
+    </div>
+    <p class="hinweis">Ein Feld antippen für ein einzelnes Doppel. Mehrere Felder werden nacheinander gespielt.</p>
+  </section>`;
+
+  h += `<section class="karte"><h2>3. Durchgänge je Feld <span class="grau">(je 3 Darts)</span></h2>
+    <div class="zeile">
+      ${[3, 5, 10, 15, 20].map(n => `<button class="btn ${d === n ? 'an' : ''}" data-a="dg" data-w="${n}">${n}</button>`).join('')}
+      <span class="zahl">
+        <button class="btn" data-a="dgMinus" aria-label="weniger">−</button>
+        <input id="dgZahl" type="number" min="1" max="100" inputmode="numeric" value="${d}" data-c="dg" aria-label="Durchgänge">
+        <button class="btn" data-a="dgPlus" aria-label="mehr">+</button>
+      </span>
+    </div>
+    <p class="hinweis">${d} Durchgänge = ${d * 3} Darts je Feld</p>
+  </section>`;
+
+  const art = eingabeVon(einst.spieler);
+  h += `<section class="karte"><h2>4. Eingabe${einst.spieler ? ` <span class="grau">(für ${esc(spielerName(einst.spieler))} gemerkt)</span>` : ''}</h2>
+    <div class="eingabe-wahl">
+      <button class="btn ${art === 'kamera' ? 'an' : ''}" data-a="eingabeArt" data-w="kamera">Kamera<small>erkennt jeden Dart, von Hand korrigierbar</small></button>
+      <button class="btn ${art === 'dart' ? 'an' : ''}" data-a="eingabeArt" data-w="dart">Jeder Dart einzeln<small>Treffer / Daneben je Dart</small></button>
+      <button class="btn ${art === 'durchgang' ? 'an' : ''}" data-a="eingabeArt" data-w="durchgang">Je Durchgang<small>0–3 Treffer je 3 Darts</small></button>
+      <button class="btn ${art === 'feld' ? 'an' : ''}" data-a="eingabeArt" data-w="feld">Je Feld<small>Treffer gesamt nach ${d * 3} Darts</small></button>
+    </div>
+    ${art === 'kamera' && !kamEinst.punkte ? `<p class="hinweis warnung">Die Kamera ist noch nicht eingerichtet – unter <b>„Kamera“</b> einmal die Scheibe einrichten.
+      Bis dahin geht die Eingabe von Hand (Treffer / Daneben).</p>` : ''}
+  </section>`;
+
+  const bereit = einst.spieler && nF;
+  h += `<button class="btn primaer gross" data-a="start" ${bereit ? '' : 'disabled'}>${
+    bereit ? `Start: ${nF === 1 ? feldName(einst.felder[0]) : nF + ' Felder'} × ${d} Durchgänge = ${zahl(nF * d * 3)} Darts`
+           : (einst.spieler ? 'Bitte ein Feld wählen' : 'Bitte einen Spieler anlegen')}</button>`;
+  return h;
+}
+
+function renderLauf() {
+  const L = lauf;
+  if (L.fertig) return renderZusammenfassung();
+  const name = esc(spielerName(L.spieler));
+  const feldText = L.felder.length > 1 ? ` · Feld ${L.idx + 1} von ${L.felder.length}` : '';
+  const fname = feldName(L.felder[L.idx]);
+
+  if (L.pause) {
+    const rec = daten.trainings.find(t => t.id === L.erledigt[L.erledigt.length - 1]);
+    const s = summe(rec ? [rec] : []);
+    return `<section class="karte anzeige">
+        <div class="info">${name}${feldText}</div>
+        <div class="feld">${fname}</div>
+        <div class="stand">${s.treffer} von ${s.darts} Darts</div>
+        <div class="quote-gross">${pct(s.quote)}</div>
+      </section>
+      ${L.eingabe === 'kamera' ? renderErgebnis() : ''}
+      <button class="btn primaer gross" data-a="weiter">Weiter zu ${feldName(L.felder[L.idx + 1])} ›</button>
+      <div class="zeile mitte abstand">
+        <button class="btn" data-a="rueck">↶ Rückgängig</button>
+        <button class="btn gefahr" data-a="beenden">Training beenden</button>
+      </div>`;
+  }
+
+  const kannRueck = offeneEingaben(L) > 0 || L.erledigt.length > 0;
+  const fuss = (hinweis) => `<div class="zeile mitte">
+      <button class="btn" data-a="rueck" ${kannRueck ? '' : 'disabled'}>↶ Rückgängig</button>
+      <button class="btn gefahr" data-a="beenden">Training beenden</button>
+    </div>
+    ${hinweis ? `<p class="hinweis" style="text-align:center">${hinweis}</p>` : ''}`;
+
+  // Je Feld: erst alle Darts werfen, dann Gesamtzahl eingeben
+  if (L.eingabe === 'feld') {
+    const max = L.durchgaenge * 3;
+    const auswahl = max <= 60
+      ? `<div class="zahlen-raster">${Array.from({ length: max + 1 }, (_, n) =>
+          `<button class="btn ${n ? 'gut' : 'null'}" data-a="feldGesamt" data-n="${n}">${n}</button>`).join('')}</div>`
+      : `<div class="zeile mitte"><span class="zahl">
+          <input id="gesamtZahl" type="number" min="0" max="${max}" inputmode="numeric" value="0" aria-label="Treffer">
+        </span><button class="btn primaer" data-a="feldGesamtFeld">Übernehmen</button></div>`;
+    return `<section class="karte anzeige">
+        <div class="info">${name}${feldText}</div>
+        <div class="feld">${fname}</div>
+        <div class="stand">${max} Darts werfen <span class="grau">(${L.durchgaenge} × 3)</span></div>
+      </section>
+      <div class="frage">Danach: Wie viele Doppel von ${max} Darts getroffen?</div>
+      ${auswahl}
+      ${fuss('')}`;
+  }
+
+  // Jeder Dart einzeln (von Hand oder mit Kamera)
+  if (jeDart(L.eingabe)) {
+    const n = L.darts.length;
+    const t = L.darts.reduce((a, b) => a + b, 0);
+    const fertigeDg = inDurchgaenge(L.darts.slice(0, Math.floor(n / 3) * 3));
+    const imDg = L.darts.slice(Math.floor(n / 3) * 3);
+    let chips = fertigeDg.map(x => `<span class="chip t${x}">${x}</span>`).join('');
+    for (let i = fertigeDg.length + 1; i < L.durchgaenge; i++) chips += `<span class="chip leer">·</span>`;
+    const punkte = [0, 1, 2].map(i => `<span class="dart-punkt ${i < imDg.length ? (imDg[i] ? 'hit' : 'miss') : (i === imDg.length ? 'jetzt' : '')}"></span>`).join('');
+    const karte = `<section class="karte anzeige ${L.eingabe === 'kamera' ? 'kompakt' : ''}">
+        <div class="info">${name}${feldText}</div>
+        <div class="feld">${fname}</div>
+        <div class="info">Durchgang <b style="color:var(--text)">${fertigeDg.length + 1}</b> von ${L.durchgaenge} · Dart <b style="color:var(--text)">${imDg.length + 1}</b></div>
+        <div class="dart-punkte">${punkte}</div>
+        <div class="stand">${t} Treffer <span class="grau">aus ${n} Darts${n ? ' · ' + pct(t / n) : ''}</span></div>
+        <div class="chips">${chips}</div>
+      </section>`;
+    if (L.eingabe === 'kamera') {
+      return `<div class="kamera-lauf">
+          <div>${karte}${renderErgebnis()}</div>
+          <div>${kameraPanel()}
+            <div class="frage">Von Hand:</div>
+            <div class="treffer-knoepfe zwei hand">
+              <button class="btn t0" data-a="dart" data-n="0">Daneben</button>
+              <button class="btn t3" data-a="dart" data-n="1">Treffer</button>
+            </div>
+          </div>
+        </div>
+        ${fuss('Mit Tastatur: 1 = Treffer, 0 = daneben, K = letzten Dart korrigieren, Rücktaste = rückgängig')}`;
+    }
+    return `${karte}
+      <div class="treffer-knoepfe zwei">
+        <button class="btn t0" data-a="dart" data-n="0">Daneben</button>
+        <button class="btn t3" data-a="dart" data-n="1">Treffer</button>
+      </div>
+      ${fuss('Mit Tastatur: 1 = Treffer, 0 = daneben, Rücktaste = rückgängig')}`;
+  }
+
+  // Je Durchgang (3 Darts)
+  const dg = L.aktuell.length;
+  const t = L.aktuell.reduce((a, b) => a + b, 0);
+  let chips = '';
+  for (let i = 0; i < L.durchgaenge; i++) {
+    chips += i < dg ? `<span class="chip t${L.aktuell[i]}">${L.aktuell[i]}</span>` : `<span class="chip leer">·</span>`;
+  }
+  return `<section class="karte anzeige">
+      <div class="info">${name}${feldText}</div>
+      <div class="feld">${fname}</div>
+      <div class="info">Durchgang <b style="color:var(--text)">${dg + 1}</b> von ${L.durchgaenge}</div>
+      <div class="stand">${t} Treffer <span class="grau">aus ${dg * 3} Darts${dg ? ' · ' + pct(t / (dg * 3)) : ''}</span></div>
+      <div class="chips">${chips}</div>
+    </section>
+    <div class="frage">Wie viele Doppel getroffen?</div>
+    <div class="treffer-knoepfe">${[0, 1, 2, 3].map(n =>
+      `<button class="btn t${n}" data-a="treffer" data-n="${n}">${n}</button>`).join('')}</div>
+    ${fuss('Mit Tastatur: 0–3 eingeben, Rücktaste = rückgängig')}`;
+}
+
+function renderZusammenfassung() {
+  const L = lauf;
+  const recs = L.erledigt.map(id => daten.trainings.find(t => t.id === id)).filter(Boolean);
+  const s = summe(recs);
+  let h = `<section class="karte anzeige">
+      <div class="info">${esc(spielerName(L.spieler))} · Training ${L.abgebrochen ? 'beendet' : 'fertig'}</div>
+      <div class="stand">${s.treffer} Treffer aus ${zahl(s.darts)} Darts</div>
+      <div class="quote-gross">${pct(s.quote)}</div>
+    </section>`;
+  if (recs.length) {
+    h += `<section class="karte"><h2>Ergebnis je Feld</h2><div class="tabelle"><table>
+      <tr><th>Feld</th><th class="z">Treffer</th><th class="z">Darts</th><th class="z">Quote</th><th>Einzelwerte</th></tr>
+      ${recs.map(r => { const x = summe([r]); return `<tr><td class="feldname">${feldName(r.feld)}</td>
+        <td class="z">${x.treffer}</td><td class="z">${x.darts}</td><td class="z">${pct(x.quote)}</td>
+        <td class="detail">${detailText(r)}</td></tr>`; }).join('')}
+    </table></div></section>`;
+  }
+  h += `<button class="btn primaer gross" data-a="nochmal">Gleiches Training nochmal</button>
+    <div class="zeile mitte abstand">
+      <button class="btn" data-a="neu">Neues Training</button>
+      <button class="btn" data-a="tab" data-v="statistik">Zur Statistik</button>
+      ${!L.abgebrochen && recs.length ? '<button class="btn" data-a="rueck">↶ Letzte Eingabe rückgängig</button>' : ''}
+    </div>`;
+  return h;
+}
+
+// ---------- Diagramme ----------
+
+// Feste Farbe je Spieler (Platz 0–7, wird beim Anlegen vergeben und bleibt). Farbfolge auf
+// Farbsehschwäche geprüft (dunkler Hintergrund); mehr als 8 Spieler bekommen keine eigene Linie.
+const FARBEN = ['#3987e5', '#d95926', '#199e70', '#c98500', '#d55181', '#008300', '#9085e9', '#e66767'];
+const MONATE_KURZ = ['Jan', 'Feb', 'Mär', 'Apr', 'Mai', 'Jun', 'Jul', 'Aug', 'Sep', 'Okt', 'Nov', 'Dez'];
+const MAX_PERIODEN = 40;
+
+function farbenZuweisen() {
+  const belegt = new Set();
+  for (const s of daten.spieler) {
+    if (Number.isInteger(s.farbe) && s.farbe >= 0 && s.farbe < FARBEN.length && !belegt.has(s.farbe)) belegt.add(s.farbe);
+    else delete s.farbe;
+  }
+  for (const s of daten.spieler) {
+    if (s.farbe !== undefined) continue;
+    for (let i = 0; i < FARBEN.length; i++) if (!belegt.has(i)) { s.farbe = i; belegt.add(i); break; }
+  }
+}
+const spielerFarbe = id => { const s = daten.spieler.find(x => x.id === id); return s && s.farbe !== undefined ? FARBEN[s.farbe] : null; };
+
+let diagramme = [];        // { id, zeichne(breite) } – werden nach dem Einfügen ins HTML gezeichnet
+function diagrammPlatz(zeichne) {
+  const id = 'dg' + diagramme.length;
+  diagramme.push({ id, zeichne });
+  return `<div class="diagramm" id="${id}"></div>`;
+}
+function zeichneDiagramme() {
+  for (const d of diagramme) {
+    const el = document.getElementById(d.id);
+    if (el) el.innerHTML = d.zeichne(Math.max(260, el.clientWidth));
+  }
+}
+let groesseTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(groesseTimer);
+  groesseTimer = setTimeout(() => { if (ansicht === 'statistik') zeichneDiagramme(); }, 150);
+});
+
+const pctKurz = q => Math.round(q * 100) + ' %';
+function skala(werte) {
+  const m = Math.max(0, ...werte);
+  const max = Math.min(1, Math.max(0.1, Math.ceil(m * 10 - 1e-9) / 10));
+  const schritt = max <= 0.5 ? 0.1 : 0.2;
+  const ticks = [];
+  for (let v = 0; v <= max + 1e-9; v += schritt) ticks.push(Math.round(v * 100) / 100);
+  if (ticks[ticks.length - 1] < max - 1e-9) ticks.push(max);
+  return { max: ticks[ticks.length - 1], ticks };
+}
+// Säule/Balken mit 4px gerundetem Ende, gerade an der Grundlinie
+function saeulePfad(x, y, b, h) {
+  const r = Math.min(4, b / 2, h);
+  return `M${x},${y + h}V${y + r}Q${x},${y} ${x + r},${y}H${x + b - r}Q${x + b},${y} ${x + b},${y + r}V${y + h}Z`;
+}
+function balkenPfad(x, y, b, h) {
+  const r = Math.min(4, h / 2, b);
+  return `M${x},${y}H${x + b - r}Q${x + b},${y} ${x + b},${y + r}V${y + h - r}Q${x + b},${y + h} ${x + b - r},${y + h}H${x}Z`;
+}
+// Tooltip-Zeilen: "farbe~wert~text" (farbe optional)
+const tipZeile = (farbe, wert, text) => [farbe || '', wert, text].join('~');
+const tipAttr = zeilen => `data-tip="${esc(zeilen.join('|'))}"`;
+
+function yAchse(s, links, rechts, y) {
+  return s.ticks.map(v => `<line class="gitter" x1="${links}" x2="${rechts}" y1="${y(v)}" y2="${y(v)}"/>
+    <text class="achse" x="${links - 6}" y="${y(v) + 4}" text-anchor="end">${pctKurz(v)}</text>`).join('');
+}
+
+// Quote je Feld: eine Reihe, Säulen D1 … Bull
+function saeulenSvg(w, werte, farbe) {
+  const H = 230, oben = 22, unten = 26, links = 42, rechts = 6;
+  const ph = H - oben - unten, pw = w - links - rechts;
+  const s = skala(werte.filter(v => v.q != null).map(v => v.q));
+  const y = q => oben + ph - (q / s.max) * ph;
+  const slot = pw / werte.length;
+  const bb = Math.max(4, Math.min(24, slot - 4));
+  const mitDaten = werte.filter(v => v.q != null);
+  const best = mitDaten.length >= 3 ? mitDaten.reduce((a, b) => (b.q > a.q ? b : a)) : null;
+  const schwach = mitDaten.length >= 3 ? mitDaten.reduce((a, b) => (b.q < a.q ? b : a)) : null;
+  const schrift = 12, zeichenBreite = 7.2;
+  // x-Beschriftung: Felder mit Daten zuerst, dann die übrigen – nur wo Platz ist
+  const belegt = [];
+  const passt = (x0, x1) => !belegt.some(([a, b]) => x0 < b + 3 && x1 > a - 3);
+  const zeigeNr = new Set();
+  [...werte.keys()].sort((a, b) => (werte[a].q == null) - (werte[b].q == null)).forEach(i => {
+    const mitte = links + i * slot + slot / 2, halb = (werte[i].kurz.length * zeichenBreite) / 2;
+    if (passt(mitte - halb, mitte + halb)) { belegt.push([mitte - halb, mitte + halb]); zeigeNr.add(i); }
+  });
+  // Wertlabel über bester/schwächster Säule nur, wenn keine Nachbarsäule hineinragt
+  const labelFrei = i => {
+    const halb = (pctKurz(werte[i].q).length * 7.5) / 2, mitte = links + i * slot + slot / 2, oberkante = y(werte[i].q) - 20;
+    return werte.every((v, j) => j === i || v.q == null || Math.abs(links + j * slot + slot / 2 - mitte) > halb + bb / 2 || y(v.q) > oberkante + 16);
+  };
+  let svg = yAchse(s, links, w - rechts, y);
+  svg += `<line class="grundlinie" x1="${links}" x2="${w - rechts}" y1="${oben + ph}" y2="${oben + ph}"/>`;
+  werte.forEach((v, i) => {
+    const x = links + i * slot;
+    const tip = v.q == null ? [tipZeile('', '–', v.lang), 'noch nicht gespielt'] : [tipZeile('', pct(v.q), v.lang), `${zahl(v.treffer)} von ${zahl(v.darts)} Darts`];
+    svg += `<g class="marke" tabindex="0" ${tipAttr(tip)}><rect class="treffer-flaeche" x="${x}" y="${oben}" width="${slot}" height="${ph + unten}"/>`;
+    if (v.q != null && v.q > 0) svg += `<path d="${saeulePfad(x + (slot - bb) / 2, y(v.q), bb, oben + ph - y(v.q))}" fill="${farbe}"/>`;
+    if (zeigeNr.has(i)) svg += `<text class="achse ${v.q == null ? 'leer' : ''}" x="${x + slot / 2}" y="${H - 8}" text-anchor="middle" font-size="${schrift}">${v.kurz}</text>`;
+    if ((v === best || v === schwach) && labelFrei(i)) {
+      svg += `<text class="wert" x="${x + slot / 2}" y="${y(v.q) - 6}" text-anchor="middle">${pctKurz(v.q)}</text>`;
+    }
+    svg += `</g>`;
+  });
+  return `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="Quote je Feld">${svg}</svg>`;
+}
+
+// Verlauf: eine Linie je Spieler (oder eine für die Auswahl)
+function linienSvg(w, perioden, serien) {
+  const n = perioden.length;
+  const H = 240, oben = 16, unten = 28, links = 42;
+  const ph = H - oben - unten;
+  const alle = serien.flatMap(se => se.werte.filter(Boolean).map(p => p.q));
+  const s = skala(alle);
+  const y = q => oben + ph - (q / s.max) * ph;
+  // Namen am Linienende nur bei höchstens 4 Reihen und ohne Überlappung
+  const enden = serien.map(se => {
+    let i = se.werte.length - 1;
+    while (i >= 0 && !se.werte[i]) i--;
+    return i < 0 ? null : { se, i, yy: y(se.werte[i].q) };
+  }).filter(Boolean).sort((a, b) => a.yy - b.yy);
+  const endLabels = serien.length <= 4 && enden.every((e, k) => !k || e.yy - enden[k - 1].yy >= 15);
+  const rechts = endLabels ? (serien.length > 1 ? 84 : 44) : 14;
+  const pw = w - links - rechts;
+  const x = i => links + (n === 1 ? pw / 2 : (i * pw) / (n - 1));
+  let svg = yAchse(s, links, w - rechts, y);
+  svg += `<line class="grundlinie" x1="${links}" x2="${w - rechts}" y1="${oben + ph}" y2="${oben + ph}"/>`;
+
+  // x-Beschriftung ausdünnen (mindestens ~64px Abstand), erste und letzte immer
+  const jede = Math.max(1, Math.ceil(64 / (n > 1 ? pw / (n - 1) : pw)));
+  perioden.forEach((p, i) => {
+    if (i % jede && i !== n - 1) return;
+    if (i !== n - 1 && n - 1 - i < jede && n > 1) return;
+    svg += `<text class="achse" x="${x(i)}" y="${H - 8}" text-anchor="${n === 1 ? 'middle' : i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}">${p.kurz}</text>`;
+  });
+
+  // Linien (bei Lücken unterbrochen), bei einer Reihe mit leichter Fläche
+  for (const se of serien) {
+    let teil = [];
+    const teile = [];
+    se.werte.forEach((p, i) => { if (p) teil.push([x(i), y(p.q)]); else if (teil.length) { teile.push(teil); teil = []; } });
+    if (teil.length) teile.push(teil);
+    for (const t of teile) {
+      const d = t.map((pt, i) => (i ? 'L' : 'M') + pt[0].toFixed(1) + ',' + pt[1].toFixed(1)).join('');
+      if (serien.length === 1 && t.length > 1) {
+        svg += `<path d="${d}L${t[t.length - 1][0].toFixed(1)},${oben + ph}L${t[0][0].toFixed(1)},${oben + ph}Z" fill="${se.farbe}" opacity=".12"/>`;
+      }
+      if (t.length > 1) svg += `<path class="linie" d="${d}" stroke="${se.farbe}"/>`;
+    }
+  }
+  // Punkte mit Ring in Hintergrundfarbe
+  if (n <= MAX_PERIODEN) {
+    for (const se of serien) se.werte.forEach((p, i) => {
+      if (p) svg += `<circle class="punkt" cx="${x(i)}" cy="${y(p.q)}" r="4" fill="${se.farbe}"/>`;
+    });
+  }
+  // Namen am Linienende (nur wenn sie sich nicht überlappen)
+  if (endLabels) {
+    for (const e of enden) {
+      const xe = x(e.i) + 9;
+      svg += `<text class="wert" x="${xe}" y="${e.yy + 4}">${serien.length > 1 ? esc(kuerzen(e.se.name, 8)) + ' ' : ''}${pctKurz(e.se.werte[e.i].q)}</text>`;
+    }
+  }
+  // Fadenkreuz: ganze Spalte ist Trefferfläche, Tooltip zeigt alle Reihen
+  perioden.forEach((p, i) => {
+    const x0 = n === 1 ? links : i === 0 ? links : (x(i - 1) + x(i)) / 2;
+    const x1 = n === 1 ? w - rechts : i === n - 1 ? w - rechts : (x(i) + x(i + 1)) / 2;
+    const zeilen = [tipZeile('', p.lang, '')].concat(serien.map(se => {
+      const v = se.werte[i];
+      return tipZeile(se.farbe, v ? pct(v.q) : '–', serien.length > 1 ? `${se.name}${v ? ` · ${zahl(v.treffer)}/${zahl(v.darts)}` : ''}` : (v ? `${zahl(v.treffer)} von ${zahl(v.darts)} Darts` : ''));
+    }));
+    svg += `<g class="spalte" tabindex="0" ${tipAttr(zeilen)}><rect class="treffer-flaeche" x="${x0}" y="${oben}" width="${Math.max(1, x1 - x0)}" height="${ph}"/>
+      <line class="kreuz" x1="${x(i)}" x2="${x(i)}" y1="${oben}" y2="${oben + ph}"/></g>`;
+  });
+  return `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="Verlauf der Quote">${svg}</svg>`;
+}
+
+// Spielervergleich: waagerechte Balken, Wert am Balkenende
+function balkenSvg(w, zeilen) {
+  const zeile = 38, dicke = 20, links = Math.min(130, Math.round(w * 0.32)), rechts = 96;
+  const H = zeilen.length * zeile + 8;
+  const pw = w - links - rechts;
+  const s = skala(zeilen.map(z => z.q));
+  let svg = `<line class="grundlinie" x1="${links}" x2="${links}" y1="4" y2="${H - 4}"/>`;
+  zeilen.forEach((z, i) => {
+    const y0 = 4 + i * zeile, yb = y0 + (zeile - dicke) / 2;
+    const b = Math.max(1, (z.q / s.max) * pw);
+    svg += `<g class="marke" tabindex="0" ${tipAttr([tipZeile(z.farbe, pct(z.q), z.name), `${zahl(z.treffer)} Treffer aus ${zahl(z.darts)} Darts`])}>
+      <rect class="treffer-flaeche" x="0" y="${y0}" width="${w}" height="${zeile}"/>
+      <text class="name" x="${links - 10}" y="${y0 + zeile / 2 + 5}" text-anchor="end">${esc(kuerzen(z.name, Math.max(6, Math.floor(links / 10))))}</text>
+      <path d="${balkenPfad(links, yb, b, dicke)}" fill="${z.farbe || '#6f7d76'}"/>
+      <text class="wert" x="${links + b + 8}" y="${y0 + zeile / 2 + 5}">${pct(z.q)} <tspan class="achse">${zahl(z.treffer)}/${zahl(z.darts)}</tspan></text></g>`;
+  });
+  return `<svg width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="Spielervergleich">${svg}</svg>`;
+}
+
+const kuerzen = (t, n) => (t.length > n ? t.slice(0, n - 1) + '…' : t);
+
+function legende(serien) {
+  return `<div class="legende">${serien.map(se =>
+    `<span><i style="background:${se.farbe}"></i>${esc(se.name)}</span>`).join('')}</div>`;
+}
+
+// Tooltip (Inhalt nur per textContent)
+const tip = document.createElement('div');
+tip.className = 'tip';
+tip.setAttribute('role', 'tooltip');
+tip.hidden = true;
+document.body.appendChild(tip);
+function tipZeigen(el, px, py) {
+  tip.replaceChildren();
+  for (const z of el.dataset.tip.split('|')) {
+    const teile = z.split('~');
+    const [farbe, wert, text] = teile.length === 1 ? ['', '', z] : teile;   // Zeile ohne ~ = reiner Text
+    const r = document.createElement('div');
+    if (farbe) { const k = document.createElement('i'); k.style.background = farbe; r.appendChild(k); }
+    if (wert) { const b = document.createElement('b'); b.textContent = wert; r.appendChild(b); }
+    if (text) { const t = document.createElement('span'); t.textContent = ' ' + text; r.appendChild(t); }
+    tip.appendChild(r);
+  }
+  tip.hidden = false;
+  const tb = tip.getBoundingClientRect();
+  let x = px + 14, y = py + 14;
+  if (x + tb.width > innerWidth - 8) x = px - tb.width - 14;
+  if (y + tb.height > innerHeight - 8) y = py - tb.height - 14;
+  tip.style.left = Math.max(8, x) + 'px';
+  tip.style.top = Math.max(8, y) + 'px';
+}
+const tipAus = () => { tip.hidden = true; };
+function tipBeiZeiger(e) {
+  const el = e.target.closest && e.target.closest('[data-tip]');
+  if (el) tipZeigen(el, e.clientX, e.clientY); else tipAus();
+}
+document.addEventListener('pointermove', tipBeiZeiger);
+document.addEventListener('pointerdown', tipBeiZeiger);
+document.addEventListener('focusin', e => {
+  const el = e.target.closest && e.target.closest('[data-tip]');
+  if (!el) return tipAus();
+  const r = el.getBoundingClientRect();
+  tipZeigen(el, r.left + r.width / 2, r.top + r.height / 3);
+});
+document.addEventListener('focusout', tipAus);
+window.addEventListener('scroll', tipAus, { passive: true });
+
+// ---------- Statistik ----------
+
+function zeitraumGrenzen() {
+  const j = new Date();
+  const heute = new Date(j.getFullYear(), j.getMonth(), j.getDate());
+  const ausText = (s, ende) => {
+    if (!s) return null;
+    const [y, m, d] = s.split('-').map(Number);
+    return ende ? new Date(y, m - 1, d, 23, 59, 59, 999) : new Date(y, m - 1, d);
+  };
+  switch (statF.zeitraum) {
+    case 'heute': return { von: heute, bis: null };
+    case 'woche': return { von: new Date(heute.getFullYear(), heute.getMonth(), heute.getDate() - (heute.getDay() + 6) % 7), bis: null };
+    case 'monat': return { von: new Date(j.getFullYear(), j.getMonth(), 1), bis: null };
+    case 'jahr': return { von: new Date(j.getFullYear(), 0, 1), bis: null };
+    case 'eigen': return { von: ausText(statF.von, false), bis: ausText(statF.bis, true) };
+    default: return { von: null, bis: null };
+  }
+}
+
+function isoWoche(d) {
+  const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const tag = t.getUTCDay() || 7;
+  t.setUTCDate(t.getUTCDate() + 4 - tag);
+  const jahr = t.getUTCFullYear();
+  const kw = Math.ceil(((t - Date.UTC(jahr, 0, 1)) / 86400000 + 1) / 7);
+  return { jahr, kw };
+}
+
+function gruppe(d) {
+  switch (statF.gruppe) {
+    case 'woche': { const w = isoWoche(d); return [`${w.jahr}-${pad(w.kw)}`, `KW ${w.kw} / ${w.jahr}`, `KW ${w.kw}`]; }
+    case 'monat': return [`${d.getFullYear()}-${pad(d.getMonth() + 1)}`, `${MONATE[d.getMonth()]} ${d.getFullYear()}`, `${MONATE_KURZ[d.getMonth()]} ${String(d.getFullYear()).slice(2)}`];
+    case 'jahr': return [String(d.getFullYear()), String(d.getFullYear()), String(d.getFullYear())];
+    default: return [`${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`, `${WOCHENTAGE[d.getDay()]} ${fmtDatum(d)}`, `${pad(d.getDate())}.${pad(d.getMonth() + 1)}.`];
+  }
+}
+
+function segment(aktion, aktuell, werte) {
+  return `<div class="segment">${werte.map(([w, t]) =>
+    `<button class="btn klein ${aktuell === w ? 'an' : ''}" data-a="${aktion}" data-w="${w}">${t}</button>`).join('')}</div>`;
+}
+
+function renderStatistik() {
+  if (statF.spieler !== 'alle' && !daten.spieler.find(s => s.id === statF.spieler)) statF.spieler = 'alle';
+  const { von, bis } = zeitraumGrenzen();
+  const liste = daten.trainings.filter(t => {
+    if (statF.spieler !== 'alle' && t.spieler !== statF.spieler) return false;
+    const d = new Date(t.datum);
+    return (!von || d >= von) && (!bis || d <= bis);
+  });
+
+  let h = `<section class="karte">
+    <div class="zeile" style="margin-bottom:12px">
+      <label>Spieler <select data-c="statSpieler">
+        <option value="alle">Alle Spieler</option>
+        ${daten.spieler.slice().sort((a, b) => a.name.localeCompare(b.name, 'de')).map(s =>
+          `<option value="${s.id}" ${statF.spieler === s.id ? 'selected' : ''}>${esc(s.name)}${s.versteckt ? ' (entfernt)' : ''}</option>`).join('')}
+      </select></label>
+    </div>
+    ${segment('statZeit', statF.zeitraum, [['heute', 'Heute'], ['woche', 'Diese Woche'], ['monat', 'Dieser Monat'], ['jahr', 'Dieses Jahr'], ['gesamt', 'Gesamt'], ['eigen', 'Zeitraum …']])}
+    ${statF.zeitraum === 'eigen' ? `<div class="zeile abstand">
+      <label>von <input type="date" data-c="statVon" value="${statF.von}"></label>
+      <label>bis <input type="date" data-c="statBis" value="${statF.bis}"></label></div>` : ''}
+  </section>`;
+
+  if (!liste.length) {
+    return h + `<section class="karte"><p class="grau" style="margin:0">Keine Trainings im gewählten Zeitraum.</p></section>`;
+  }
+
+  // Gesamt
+  const s = summe(liste);
+  const runden = new Set(liste.map(t => t.runde)).size;
+  h += `<div class="kacheln">
+    <div class="kachel"><b>${zahl(runden)}</b><span>Trainings</span></div>
+    <div class="kachel"><b>${zahl(s.darts)}</b><span>Darts</span></div>
+    <div class="kachel"><b>${zahl(s.treffer)}</b><span>Treffer</span></div>
+    <div class="kachel"><b>${pct(s.quote)}</b><span>Quote</span></div>
+  </div>`;
+
+  // Verteilung der Treffer je Durchgang (nur wo je Durchgang oder je Dart eingegeben wurde)
+  const vert = [0, 0, 0, 0];
+  for (const t of liste) if (t.treffer) for (const n of t.treffer) vert[n]++;
+  const vdg = vert.reduce((a, b) => a + b, 0);
+  if (vdg) {
+    h += `<section class="karte"><h2>Treffer je Durchgang <span class="grau">(${zahl(vdg)} Durchgänge${vdg < s.dg ? ', ohne „nur Gesamt“' : ''})</span></h2>
+      <div class="kacheln">${vert.map((v, n) =>
+        `<div class="kachel"><b>${zahl(v)}×</b><span>${n} Treffer · ${pct(v / vdg)}</span></div>`).join('')}</div></section>`;
+  }
+
+  // Treffer nach 1., 2., 3. Dart (nur wo jeder Dart einzeln eingegeben wurde)
+  const pos = [[0, 0], [0, 0], [0, 0]];
+  for (const t of liste) if (t.darts) t.darts.forEach((d, i) => { pos[i % 3][0] += d; pos[i % 3][1]++; });
+  if (pos[0][1]) {
+    h += `<section class="karte"><h2>Treffer nach Dart <span class="grau">(${zahl(pos[0][1])} Durchgänge mit Einzel-Darts)</span></h2>
+      <div class="kacheln" style="grid-template-columns:repeat(3,1fr)">${pos.map(([t, n], i) =>
+        `<div class="kachel"><b>${pct(t / n)}</b><span>${i + 1}. Dart · ${zahl(t)} von ${zahl(n)}</span></div>`).join('')}</div></section>`;
+  }
+
+  // Wie oft lag die Kamera richtig? (nur Trainings mit Kamera)
+  let kErk = 0, kKorr = 0, kNicht = 0;
+  for (const t of liste) if (t.eingabe === 'kamera') {
+    for (const e of t.erkannt) { if (e === '?') kNicht++; else if (e) kErk++; }
+    kKorr += t.korrigiert || 0;
+  }
+  if (kErk + kNicht) {
+    h += `<section class="karte"><h2>Kamera <span class="grau">(Trainings mit Kamera-Erkennung)</span></h2>
+      <div class="kacheln">
+        <div class="kachel"><b>${zahl(kErk)}</b><span>Darts erkannt</span></div>
+        <div class="kachel"><b>${zahl(kKorr)}</b><span>davon korrigiert</span></div>
+        <div class="kachel"><b>${kErk ? pct(1 - kKorr / kErk) : '–'}</b><span>ohne Korrektur</span></div>
+        <div class="kachel"><b>${zahl(kNicht)}</b><span>nicht gesehen</span></div>
+      </div></section>`;
+  }
+
+  // Je Feld
+  const farbeAuswahl = statF.spieler === 'alle' ? FARBEN[0] : (spielerFarbe(statF.spieler) || FARBEN[0]);
+  let felder = FELDER.map(f => ({ f, ...summe(liste.filter(t => t.feld === f)) }));
+  if (statF.sort === 'quote') felder.sort((a, b) => (b.quote ?? -1) - (a.quote ?? -1));
+  const saeulen = felder.map(x => ({ kurz: x.f === 25 ? 'B' : String(x.f), lang: feldName(x.f), q: x.dg ? x.quote : null, treffer: x.treffer, darts: x.darts }));
+  h += `<section class="karte"><div class="kopfzeile"><h2>Quote je Feld</h2>
+      ${segment('statSort', statF.sort, [['feld', 'nach Feld'], ['quote', 'nach Quote']])}</div>
+    ${diagrammPlatz(w => saeulenSvg(w, saeulen, farbeAuswahl))}
+    <details class="tabelle-auf"><summary>Als Tabelle</summary><div class="tabelle"><table>
+      <tr><th>Feld</th><th class="z">Darts</th><th class="z">Treffer</th><th class="z">Quote</th><th></th></tr>
+      ${felder.map(x => `<tr class="${x.dg ? '' : 'leer'}"><td class="feldname">${feldName(x.f)}</td>
+        <td class="z">${x.dg ? zahl(x.darts) : '–'}</td><td class="z">${x.dg ? zahl(x.treffer) : '–'}</td>
+        <td class="z">${pct(x.quote)}</td><td class="b">${balken(x.quote)}</td></tr>`).join('')}
+    </table></div></details></section>`;
+
+  // Verlauf
+  const grp = new Map();
+  for (const t of liste) {
+    const [k, label, kurz] = gruppe(new Date(t.datum));
+    if (!grp.has(k)) grp.set(k, { label, kurz, liste: [] });
+    grp.get(k).liste.push(t);
+  }
+  const zeilen = [...grp.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  const perioden = zeilen.slice(0, MAX_PERIODEN).reverse().map(([, g]) => ({ lang: g.label, kurz: g.kurz, liste: g.liste }));
+  const punkt = l => { const x = summe(l); return x.dg ? { q: x.quote, treffer: x.treffer, darts: x.darts } : null; };
+  let serien, ohneFarbe = 0;
+  const mitDaten = statF.spieler === 'alle' ? daten.spieler.filter(sp => liste.some(t => t.spieler === sp.id)) : [];
+  if (mitDaten.length > 1) {
+    serien = mitDaten.filter(sp => spielerFarbe(sp.id)).map(sp => ({
+      name: sp.name, farbe: spielerFarbe(sp.id), werte: perioden.map(p => punkt(p.liste.filter(t => t.spieler === sp.id)))
+    }));
+    ohneFarbe = mitDaten.length - serien.length;
+  } else {
+    const sp = statF.spieler !== 'alle' ? statF.spieler : (mitDaten[0] && mitDaten[0].id);
+    serien = [{ name: sp ? spielerName(sp) : 'Alle', farbe: (sp && spielerFarbe(sp)) || FARBEN[0], werte: perioden.map(p => punkt(p.liste)) }];
+  }
+  h += `<section class="karte"><div class="kopfzeile"><h2>Verlauf der Quote</h2>
+      ${segment('statGruppe', statF.gruppe, [['tag', 'Tag'], ['woche', 'Woche'], ['monat', 'Monat'], ['jahr', 'Jahr']])}</div>
+    ${serien.length > 1 ? legende(serien) : ''}
+    ${diagrammPlatz(w => linienSvg(w, perioden, serien))}
+    ${zeilen.length > MAX_PERIODEN ? `<p class="hinweis">Gezeigt: die letzten ${MAX_PERIODEN} Zeiträume. Für mehr „Woche“ oder „Monat“ wählen.</p>` : ''}
+    ${ohneFarbe ? `<p class="hinweis">${ohneFarbe} weitere Spieler ohne eigene Linie (höchstens 8) – oben einzeln auswählen.</p>` : ''}
+    <details class="tabelle-auf"><summary>Als Tabelle</summary><div class="tabelle"><table>
+      <tr><th>Zeitraum</th><th class="z">Darts</th><th class="z">Treffer</th><th class="z">Quote</th><th></th></tr>
+      ${zeilen.map(([, g]) => { const x = summe(g.liste); return `<tr><td>${g.label}</td>
+        <td class="z">${zahl(x.darts)}</td><td class="z">${zahl(x.treffer)}</td><td class="z">${pct(x.quote)}</td>
+        <td class="b">${balken(x.quote)}</td></tr>`; }).join('')}
+    </table></div></details></section>`;
+
+  // Spielervergleich
+  if (statF.spieler === 'alle') {
+    const proSpieler = daten.spieler.map(sp => ({ name: sp.name, farbe: spielerFarbe(sp.id), ...summe(liste.filter(t => t.spieler === sp.id)) }))
+      .filter(x => x.dg).sort((a, b) => b.quote - a.quote).map(x => ({ ...x, q: x.quote }));
+    if (proSpieler.length > 1) {
+      h += `<section class="karte"><h2>Spielervergleich</h2>
+        ${diagrammPlatz(w => balkenSvg(w, proSpieler))}</section>`;
+    }
+  }
+
+  // Einzelne Trainings
+  const sortiert = liste.slice().sort((a, b) => Date.parse(b.datum) - Date.parse(a.datum));
+  const zeige = statF.alle ? sortiert : sortiert.slice(0, 30);
+  h += `<section class="karte"><h2>Einzelne Trainings <span class="grau">(je Feld)</span></h2><div class="tabelle"><table>
+    <tr><th>Datum</th>${statF.spieler === 'alle' ? '<th>Spieler</th>' : ''}<th>Feld</th><th class="z">Treffer</th><th class="z">Quote</th><th>Einzelwerte</th><th></th></tr>
+    ${zeige.map(t => { const x = summe([t]); const d = new Date(t.datum); return `<tr>
+      <td style="white-space:nowrap">${fmtDatum(d)} <span class="grau">${fmtZeit(d)}</span></td>
+      ${statF.spieler === 'alle' ? `<td>${esc(spielerName(t.spieler))}</td>` : ''}
+      <td class="feldname">${feldName(t.feld)}</td><td class="z">${x.treffer}/${x.darts}</td><td class="z">${pct(x.quote)}</td>
+      <td class="detail">${detailText(t)}</td>
+      <td class="z"><button class="btn klein gefahr" data-a="trLoeschen" data-id="${t.id}" aria-label="Löschen">✕</button></td></tr>`; }).join('')}
+  </table></div>
+  ${sortiert.length > 30 && !statF.alle ? `<div class="zeile abstand"><button class="btn klein" data-a="statAlle">Alle ${sortiert.length} anzeigen</button></div>` : ''}
+  </section>`;
+  return h;
+}
+
+// ---------- Spieler ----------
+
+function spielerZeile(sp) {
+  const tr = daten.trainings.filter(t => t.spieler === sp.id);
+  const s = summe(tr);
+  const knoepfe = sp.versteckt
+    ? `<button class="btn klein" data-a="spielerZurueck" data-id="${sp.id}">Wieder in die Liste</button>
+       <button class="btn klein gefahr" data-a="spielerLoeschen" data-id="${sp.id}">Endgültig löschen</button>`
+    : `<button class="btn klein" data-a="umbenennen" data-id="${sp.id}">Umbenennen</button>
+       <button class="btn klein gefahr" data-a="spielerLoeschen" data-id="${sp.id}">Löschen</button>`;
+  return `<div class="spieler-zeile"><div><b>${esc(sp.name)}</b>
+    <div class="grau">${tr.length ? `${zahl(new Set(tr.map(t => t.runde)).size)} Trainings · ${zahl(s.darts)} Darts · Quote ${pct(s.quote)}` : 'noch keine Trainings'}</div></div>
+    <div class="zeile">${knoepfe}</div></div>`;
+}
+
+function renderSpieler() {
+  const aktiv = aktiveSpieler();
+  const entfernt = daten.spieler.filter(s => s.versteckt).sort((a, b) => a.name.localeCompare(b.name, 'de'));
+  let h = `<section class="karte"><h2>Spieler anlegen</h2>
+    <div class="zeile"><input id="neuName" type="text" placeholder="Name" maxlength="30" autocomplete="off">
+    <button class="btn primaer" data-a="spielerNeu">Hinzufügen</button></div></section>`;
+  h += `<section class="karte"><h2>Spieler <span class="grau">(${aktiv.length})</span></h2>`;
+  h += aktiv.length ? aktiv.map(spielerZeile).join('') : `<p class="grau" style="margin:0">Noch keine Spieler.</p>`;
+  h += `</section>`;
+  if (entfernt.length) {
+    h += `<section class="karte"><h2>Aus der Liste entfernt <span class="grau">(Daten bleiben in der Statistik)</span></h2>
+      ${entfernt.map(spielerZeile).join('')}</section>`;
+  }
+  return h;
+}
+
+// Tippfehler-Abstand zweier Namen (Levenshtein)
+function abstand(a, b) {
+  const z = Array.from({ length: b.length + 1 }, (_, i) => i);
+  for (let i = 1; i <= a.length; i++) {
+    let links = i, diag = i - 1;
+    for (let j = 1; j <= b.length; j++) {
+      const oben = z[j];
+      z[j] = Math.min(oben + 1, links + 1, diag + (a[i - 1] === b[j - 1] ? 0 : 1));
+      diag = oben;
+      links = z[j];
+    }
+  }
+  return z[b.length];
+}
+const nameKey = s => s.trim().replace(/\s+/g, ' ').toLowerCase();
+
+function spielerWaehlen(sp, text) {
+  if (sp.versteckt) { delete sp.versteckt; datenGeaendert(); }
+  einst.spieler = sp.id;
+  einstSpeichern();
+  neuerSpielerOffen = false;
+  render();
+  meldung(text);
+}
+
+async function spielerNeu() {
+  const inp = document.getElementById('neuName');
+  const name = (inp ? inp.value : '').trim().replace(/\s+/g, ' ');
+  if (!name) { meldung('Bitte einen Namen eingeben.'); if (inp) inp.focus(); return; }
+  const key = nameKey(name);
+
+  const gleich = daten.spieler.find(s => nameKey(s.name) === key);
+  if (gleich) {
+    spielerWaehlen(gleich, gleich.versteckt ? `${gleich.name} ist wieder in der Liste.` : `${gleich.name} gibt es schon – ausgewählt.`);
+    return;
+  }
+  const grenze = key.length <= 4 ? 1 : 2;
+  const aehnlich = daten.spieler.find(s => abstand(nameKey(s.name), key) <= grenze);
+  if (aehnlich) {
+    const wahl = await dialog(`Es gibt schon den Spieler „${aehnlich.name}“.\nIst das ein Tippfehler?`,
+      [{ text: 'Abbrechen', wert: null }, { text: `„${name}“ neu anlegen`, wert: 'neu' }, { text: `„${aehnlich.name}“ nehmen`, wert: 'alt', art: 'primaer' }]);
+    if (!wahl) return;
+    if (wahl === 'alt') { spielerWaehlen(aehnlich, `${aehnlich.name} ausgewählt.`); return; }
+  }
+
+  const sp = { id: neueId(), name, angelegt: new Date().toISOString() };
+  daten.spieler.push(sp);
+  farbenZuweisen();
+  datenGeaendert();
+  spielerWaehlen(sp, `${name} angelegt.`);
+  const neu = document.getElementById('neuName');
+  if (neu && ansicht === 'spieler') neu.focus();
+}
+
+async function umbenennen(id) {
+  const sp = daten.spieler.find(s => s.id === id);
+  if (!sp) return;
+  const name = await dialog('Neuer Name:', [{ text: 'Abbrechen', wert: null }, { text: 'Speichern', wert: true, art: 'primaer' }], sp.name);
+  if (name == null) return;
+  const n = name.trim().replace(/\s+/g, ' ');
+  if (!n || n === sp.name) return;
+  if (daten.spieler.some(s => s.id !== id && nameKey(s.name) === nameKey(n))) { meldung(`„${n}“ gibt es schon.`); return; }
+  sp.name = n;
+  datenGeaendert();
+  render();
+}
+
+async function spielerLoeschen(id) {
+  const sp = daten.spieler.find(s => s.id === id);
+  if (!sp) return;
+  const laeuft = lauf && lauf.spieler === id && !lauf.fertig;
+  const n = daten.trainings.filter(t => t.spieler === id).length;
+
+  let wahl;
+  if (!n) {
+    wahl = await dialog(`Spieler „${sp.name}“ löschen?\n\nEs gibt noch keine Trainingsdaten.`,
+      [{ text: 'Abbrechen', wert: null }, { text: 'Löschen', wert: 'alles', art: 'gefahr' }]);
+  } else if (sp.versteckt) {
+    wahl = await dialog(`„${sp.name}“ endgültig löschen?\n\nDabei werden auch alle ${n} Feld-Trainings gelöscht. Das lässt sich nicht rückgängig machen.`,
+      [{ text: 'Abbrechen', wert: null }, { text: 'Alles löschen', wert: 'alles', art: 'gefahr' }]);
+  } else {
+    wahl = await dialog(`Spieler „${sp.name}“ löschen.\n\nSollen auch alle Trainingsdaten (${n} Feld-Trainings) gelöscht werden?\n\n` +
+      '„Nur aus der Liste“: Der Name verschwindet aus der Auswahl, die Ergebnisse bleiben in der Statistik.',
+      [{ text: 'Abbrechen', wert: null }, { text: 'Spieler und alle Daten löschen', wert: 'alles', art: 'gefahr' }, { text: 'Nur aus der Liste', wert: 'liste', art: 'primaer' }]);
+    if (wahl === 'alles') {
+      wahl = await dialog(`Wirklich alle ${n} Feld-Trainings von „${sp.name}“ endgültig löschen?`,
+        [{ text: 'Abbrechen', wert: null }, { text: 'Endgültig löschen', wert: 'alles', art: 'gefahr' }]);
+    }
+  }
+  if (!wahl) return;
+  if (wahl === 'alles' && laeuft) { meldung(`${sp.name} hat gerade ein laufendes Training.`); return; }
+
+  if (wahl === 'liste') {
+    sp.versteckt = true;
+    meldung(`${sp.name} aus der Liste entfernt. Die Daten bleiben erhalten.`);
+  } else {
+    daten.spieler = daten.spieler.filter(s => s.id !== id);
+    daten.trainings = daten.trainings.filter(t => t.spieler !== id);
+    if (lauf && lauf.spieler === id) { lauf = null; laufSpeichern(); }
+    meldung(`${sp.name} und alle Daten gelöscht.`);
+  }
+  if (einst.spieler === id) { einst.spieler = null; einstSpeichern(); }
+  datenGeaendert();
+  render();
+}
+
+function spielerZurueck(id) {
+  const sp = daten.spieler.find(s => s.id === id);
+  if (!sp) return;
+  delete sp.versteckt;
+  datenGeaendert();
+  render();
+  meldung(`${sp.name} ist wieder in der Liste.`);
+}
+
+// ---------- Training ----------
+
+const EINGABEN = {
+  kamera: 'Kamera',
+  dart: 'Jeder Dart einzeln',
+  durchgang: 'Je Durchgang (3 Darts)',
+  feld: 'Je Feld (gesamt)'
+};
+const eingabeVon = id => (einst.eingabeJe && EINGABEN[einst.eingabeJe[id]] ? einst.eingabeJe[id] : 'kamera');
+const jeDart = e => e === 'dart' || e === 'kamera';   // Kamera = jeder Dart einzeln, Vorschlag von der Kamera
+
+function inDurchgaenge(darts) {
+  const r = [];
+  for (let i = 0; i + 3 <= darts.length; i += 3) r.push(darts[i] + darts[i + 1] + darts[i + 2]);
+  return r;
+}
+
+function offeneEingaben(L) {
+  if (jeDart(L.eingabe)) return L.darts.length;
+  if (L.eingabe === 'feld') return 0;
+  return L.aktuell.length;
+}
+
+function starten(o) {
+  o = o || { spieler: einst.spieler, felder: einst.felder.slice(), durchgaenge: einst.durchgaenge, reihenfolge: einst.reihenfolge, eingabe: eingabeVon(einst.spieler) };
+  if (!o.spieler || !o.felder.length) return;
+  const folge = o.felder.slice().sort((a, b) => a - b);
+  if (o.reihenfolge === 'zufall') {
+    for (let i = folge.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [folge[i], folge[j]] = [folge[j], folge[i]]; }
+  }
+  lauf = {
+    runde: neueId(), spieler: o.spieler, felder: folge, auswahl: o.felder.slice(), reihenfolge: o.reihenfolge,
+    durchgaenge: o.durchgaenge, eingabe: o.eingabe || 'durchgang',
+    idx: 0, aktuell: [], darts: [], info: [], erledigt: [], pause: false, fertig: false, abgebrochen: false, ziehen: false
+  };
+  laufSpeichern();
+  wachHalten(true);
+  if (lauf.eingabe === 'kamera') kameraSicherstellen();
+  render();
+  window.scrollTo(0, 0);
+}
+
+// Speichert das aktuelle Feld als Datensatz. Gibt false zurück, wenn es nichts zu speichern gibt.
+function feldSpeichern(L, gesamt) {
+  const rec = { id: neueId(), runde: L.runde, spieler: L.spieler, feld: L.felder[L.idx], datum: new Date().toISOString(), eingabe: L.eingabe };
+  if (jeDart(L.eingabe)) {
+    rec.darts = L.darts.slice(0, Math.floor(L.darts.length / 3) * 3);   // nur vollständige Durchgänge
+    rec.treffer = inDurchgaenge(rec.darts);
+    if (L.eingabe === 'kamera') {
+      const info = L.info.slice(0, rec.darts.length);
+      if (info.some(x => x && x.q !== 'h')) {
+        rec.erkannt = info.map(x => (!x || x.q === 'h' ? null : x.q === 'a' ? '?' : x.f));
+        rec.korrigiert = info.filter(x => x && x.korr).length;
+      } else rec.eingabe = 'dart';   // ganz von Hand eingegeben
+    }
+  } else if (L.eingabe === 'feld') {
+    rec.durchgaenge = L.durchgaenge;
+    rec.gesamt = gesamt;
+  } else {
+    rec.treffer = L.aktuell.slice();
+  }
+  if (rec.treffer) { rec.durchgaenge = rec.treffer.length; rec.gesamt = rec.treffer.reduce((a, b) => a + b, 0); }
+  L.letzteInfo = L.info[L.darts.length - 1] || null;   // für „Falsch?“ nach dem letzten Dart eines Felds
+  L.aktuell = [];
+  L.darts = [];
+  L.info = [];
+  if (!rec.durchgaenge) return false;
+  daten.trainings.push(rec);
+  L.erledigt.push(rec.id);
+  datenGeaendert();
+  return true;
+}
+
+function feldAbschliessen(L, gesamt) {
+  feldSpeichern(L, gesamt);
+  if (L.idx >= L.felder.length - 1) { L.fertig = true; wachHalten(false); }
+  else { L.pause = true; L.pauseSeit = Date.now(); }
+}
+
+function vibrieren() {
+  try { if (navigator.vibrate) navigator.vibrate(15); } catch (e) { /* egal */ }
+}
+
+function eingabe(n) {
+  const L = lauf;
+  if (!L || L.pause || L.fertig || L.eingabe !== 'durchgang') return;
+  L.aktuell.push(n);
+  vibrieren();
+  if (L.aktuell.length >= L.durchgaenge) feldAbschliessen(L);
+  laufSpeichern();
+  render();
+}
+
+// info: { q: 'k' (Kamera) | 'h' (von Hand) | 'a' (nicht gesehen, beim Herausziehen ergänzt), f: erkanntes Feld, … }
+function dartEingabe(treffer, info) {
+  const L = lauf;
+  if (!L || L.pause || L.fertig || !jeDart(L.eingabe)) return;
+  L.darts.push(treffer ? 1 : 0);
+  L.info = L.info || [];
+  L.info[L.darts.length - 1] = info || { q: 'h' };
+  L.ziehen = L.darts.length % 3 === 0;   // Durchgang voll: Kamera wartet aufs Herausziehen
+  vibrieren();
+  if (L.darts.length >= L.durchgaenge * 3) feldAbschliessen(L);
+  laufSpeichern();
+  render();
+}
+
+function feldGesamt(n) {
+  const L = lauf;
+  if (!L || L.pause || L.fertig || L.eingabe !== 'feld') return;
+  if (!Number.isFinite(n) || n < 0 || n > L.durchgaenge * 3) { meldung(`Bitte eine Zahl von 0 bis ${L.durchgaenge * 3} eingeben.`); return; }
+  vibrieren();
+  feldAbschliessen(L, Math.round(n));
+  laufSpeichern();
+  render();
+}
+
+function weiter() {
+  const L = lauf;
+  if (!L || !L.pause || Date.now() - (L.pauseSeit || 0) < 400) return; // Schutz gegen versehentlichen Doppeltipp
+  L.idx++;
+  L.pause = false;
+  laufSpeichern();
+  render();
+}
+
+function rueckgaengig() {
+  const L = lauf;
+  if (!L) return;
+  if (!L.pause && !L.fertig && offeneEingaben(L)) {
+    if (jeDart(L.eingabe)) { L.darts.pop(); L.info.length = L.darts.length; L.ziehen = false; } else L.aktuell.pop();
+  } else if (L.erledigt.length && !L.abgebrochen) {
+    // Zurück in das zuletzt abgeschlossene Feld: gespeichertes Ergebnis wieder herausnehmen
+    if (!L.pause && !L.fertig) L.idx--;
+    const id = L.erledigt.pop();
+    const i = daten.trainings.findIndex(t => t.id === id);
+    const rec = i >= 0 ? daten.trainings.splice(i, 1)[0] : null;
+    if (rec) datenGeaendert();
+    L.aktuell = [];
+    L.darts = [];
+    L.info = [];
+    L.ziehen = false;
+    if (rec && jeDart(L.eingabe) && rec.darts) {
+      L.darts = rec.darts.slice(0, -1);
+      L.info = L.darts.map((_, i) => (rec.erkannt && rec.erkannt[i] ? { q: rec.erkannt[i] === '?' ? 'a' : 'k', f: rec.erkannt[i] } : { q: 'h' }));
+    }
+    else if (rec && L.eingabe === 'durchgang' && rec.treffer) L.aktuell = rec.treffer.slice(0, -1);
+    // Je Feld: zurück zur Eingabe der Gesamtzahl
+    L.pause = false;
+    if (L.fertig) { L.fertig = false; wachHalten(true); }
+  } else return;
+  laufSpeichern();
+  render();
+}
+
+async function trainingBeenden() {
+  const L = lauf;
+  if (!L) return;
+  const offen = L.pause ? 0 : offeneEingaben(L);
+  const voll = jeDart(L.eingabe) ? Math.floor(L.darts.length / 3) : L.aktuell.length;
+  const fname = feldName(L.felder[L.idx]);
+  let text = 'Training jetzt beenden?';
+  if (L.erledigt.length) text += `\n\nAbgeschlossene Felder (${L.erledigt.length}) bleiben gespeichert.`;
+  const knoepfe = [{ text: 'Weiterspielen', wert: null }];
+  if (offen) {
+    text += jeDart(L.eingabe)
+      ? `\n\nAuf ${fname} sind erst ${L.darts.length} von ${L.durchgaenge * 3} Darts geworfen.` +
+        (voll * 3 < L.darts.length ? (voll ? `\nGespeichert werden nur die ${voll} vollständigen Durchgänge.` : '\nEin angefangener Durchgang kann nicht gespeichert werden.') : '')
+      : `\n\nAuf ${fname} sind erst ${offen} von ${L.durchgaenge} Durchgängen gespielt.`;
+    knoepfe.push({ text: `${fname} verwerfen`, wert: 'verwerfen', art: 'gefahr' });
+    if (voll) knoepfe.push({ text: `${fname} speichern`, wert: 'speichern', art: 'primaer' });
+  } else {
+    knoepfe.push({ text: 'Beenden', wert: 'verwerfen', art: 'gefahr' });
+  }
+  const wahl = await dialog(text, knoepfe);
+  if (!wahl) return;
+  if (wahl === 'speichern') feldSpeichern(L);
+  if (L.erledigt.length) { L.fertig = true; L.abgebrochen = true; L.pause = false; L.aktuell = []; L.darts = []; L.info = []; }
+  else lauf = null;
+  wachHalten(false);
+  laufSpeichern();
+  render();
+}
+
+// ---------- Daten / txt-Datei ----------
+
+function datenAlsText() {
+  const jetzt = new Date();
+  const liste = (arr, f) => (arr.length ? '[\n    ' + arr.map(f).join(',\n    ') + '\n  ]' : '[]');
+  const json = '{\n' +
+    '  "app": "Doppel 15",\n' +
+    '  "quelle": "Doppel 15 Kamera",\n' +
+    `  "version": ${VERSION},\n` +
+    `  "gespeichert": ${JSON.stringify(jetzt.toISOString())},\n` +
+    '  "spieler": ' + liste(daten.spieler, s => {
+      const o = { id: s.id, name: s.name, angelegt: s.angelegt, farbe: s.farbe };
+      if (s.versteckt) o.versteckt = true;
+      return JSON.stringify(o);
+    }) + ',\n' +
+    '  "trainings": ' + liste(daten.trainings, t => {
+      const o = { id: t.id, runde: t.runde, spieler: t.spieler, feld: t.feld, datum: t.datum, eingabe: t.eingabe, durchgaenge: t.durchgaenge, gesamt: t.gesamt };
+      if (t.darts) o.darts = t.darts; else if (t.treffer) o.treffer = t.treffer;
+      if (t.eingabe === 'kamera') { o.erkannt = t.erkannt; o.korrigiert = t.korrigiert; }
+      return JSON.stringify(o);
+    }) + '\n' +
+    '}\n';
+  return [
+    'Doppel 15 – Doppeltraining (Kamera-Fassung)',
+    `Datenformat: ${VERSION}`,
+    `Gespeichert: ${fmtDatum(jetzt)} ${fmtZeit(jetzt)}`,
+    `Spieler: ${daten.spieler.map(s => s.name).join(', ') || '–'}`,
+    `Feld-Trainings: ${daten.trainings.length}`,
+    '',
+    'Diese Datei in Doppel 15 oder Doppel 15 Kamera unter „Daten“ → „Aus txt-Datei laden“ wieder einlesen.',
+    'Bitte nicht von Hand ändern. Feld 25 = Bull. "gesamt" = Treffer aus "durchgaenge" × 3 Darts;',
+    '"treffer" = Treffer je Durchgang, "darts" = jeder Dart einzeln (1 = Treffer, 0 = daneben).',
+    'Eingabe "kamera": "erkannt" = von der Kamera erkanntes Feld je Dart (null = von Hand, "?" = nicht gesehen),',
+    '"korrigiert" = Zahl der von Hand korrigierten Kamera-Ergebnisse.',
+    '',
+    '----- DATEN -----',
+    json
+  ].join('\n');
+}
+
+function parseDatei(text) {
+  text = text.replace(/^﻿/, '');
+  const a = text.indexOf('{'), b = text.lastIndexOf('}');
+  if (a < 0 || b < a) throw new Error('Keine Doppel-15-Daten gefunden.');
+  let o;
+  try { o = JSON.parse(text.slice(a, b + 1)); } catch (e) { throw new Error('Der Inhalt ist beschädigt.'); }
+  if (o.app !== 'Doppel 15') throw new Error('Die Datei stammt nicht von Doppel 15.');   // gilt auch für die Kamera-Fassung
+  if (Number(o.version) > VERSION) throw new Error(`Die Datei stammt von einer neueren Fassung von Doppel 15 (Datenformat ${o.version}).`);
+  return normalisieren(o);
+}
+
+function gesichert(name) {
+  meta.ungesichert = false;
+  meta.letzteDatei = new Date().toISOString();
+  meta.dateiName = name;
+  lsSchreiben(LS.meta, meta);
+}
+
+const dateiInhalt = () => '﻿' + datenAlsText();
+
+// --- Speicherordner (Chrome/Edge): Ordner wird einmal gewählt und im Browser gemerkt (IndexedDB) ---
+
+function idb(modus, fn) {
+  return new Promise((ok, fehler) => {
+    const r = indexedDB.open('doppelkamera', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('handles');
+    r.onerror = () => fehler(r.error);
+    r.onsuccess = () => {
+      const db = r.result;
+      const tx = db.transaction('handles', modus);
+      const q = fn(tx.objectStore('handles'));
+      tx.oncomplete = () => { db.close(); ok(q.result); };
+      tx.onerror = () => { db.close(); fehler(tx.error); };
+    };
+  });
+}
+
+async function ordnerInit() {
+  if (!fsOrdner) return;
+  try {
+    ordner = (await idb('readonly', st => st.get('ordner'))) || null;
+    if (ordner) ordnerRecht = await ordner.queryPermission({ mode: 'readwrite' });
+  } catch (e) { ordner = null; }
+  render();
+}
+
+async function rechtHolen() {
+  ordnerRecht = await ordner.queryPermission({ mode: 'readwrite' });
+  if (ordnerRecht !== 'granted') ordnerRecht = await ordner.requestPermission({ mode: 'readwrite' });
+  return ordnerRecht === 'granted';
+}
+
+async function ordnerWaehlen() {
+  let h;
+  try {
+    h = await window.showDirectoryPicker({ id: 'doppelkamera', mode: 'readwrite', startIn: ordner || 'documents' });
+  } catch (e) {
+    if (e.name !== 'AbortError') meldung('Ordner konnte nicht gewählt werden: ' + e.message);
+    return;
+  }
+  ordner = h;
+  ordnerRecht = 'granted';
+  try { await idb('readwrite', st => st.put(h, 'ordner')); } catch (e) { /* dann nur bis zum Schließen gemerkt */ }
+
+  // Liegt dort schon eine Datei (z. B. von einem anderen Gerät), zuerst übernehmen statt überschreiben.
+  let vorhanden = '';
+  try { vorhanden = await (await (await h.getFileHandle(DATEINAME)).getFile()).text(); } catch (e) { /* keine Datei */ }
+  if (vorhanden.trim()) {
+    const ok = await textEinlesen(vorhanden, `${h.name}/${DATEINAME}`);
+    if (!ok) { meldung(`Ordner „${h.name}“ gewählt. Die vorhandene Datei wurde nicht verändert.`); render(); return; }
+  }
+  await inOrdnerSchreiben(false);
+  render();
+}
+
+async function ordnerVergessen() {
+  const ok = await dialog(`Ordner „${ordner.name}“ nicht mehr verwenden?\n\nDie Dateien im Ordner bleiben erhalten.`,
+    [{ text: 'Abbrechen', wert: null }, { text: 'Nicht mehr verwenden', wert: true, art: 'gefahr' }]);
+  if (!ok) return;
+  ordner = null;
+  try { await idb('readwrite', st => st.delete('ordner')); } catch (e) { /* egal */ }
+  render();
+}
+
+// Vor dem ersten Überschreiben eines Tages wird der alte Stand nach „Sicherungen“ kopiert.
+async function tagesSicherung(fh) {
+  const alt = await (await fh.getFile()).text();
+  if (!alt.trim()) return;
+  const d = new Date();
+  const name = `doppelkamera-daten_${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}.txt`;
+  const sd = await ordner.getDirectoryHandle('Sicherungen', { create: true });
+  try { await sd.getFileHandle(name); return; } catch (e) { /* heute noch keine Sicherung */ }
+  const w = await (await sd.getFileHandle(name, { create: true })).createWritable();
+  await w.write(alt);
+  await w.close();
+}
+
+async function inOrdnerSchreiben(still) {
+  if (!ordner) return false;
+  try {
+    if (still) {
+      ordnerRecht = await ordner.queryPermission({ mode: 'readwrite' });
+      if (ordnerRecht !== 'granted') { if (ansicht !== 'training' || !lauf) render(); return false; }
+    } else if (!(await rechtHolen())) {
+      meldung('Der Zugriff auf den Ordner wurde nicht erlaubt.');
+      render();
+      return false;
+    }
+    const fh = await ordner.getFileHandle(DATEINAME, { create: true });
+    await tagesSicherung(fh);
+    const w = await fh.createWritable();
+    await w.write(dateiInhalt());
+    await w.close();
+    gesichert(`${ordner.name}/${DATEINAME}`);
+    if (!still) meldung(`Gespeichert im Ordner „${ordner.name}“.`);
+    if (ansicht === 'daten' || !still) render();
+    else renderNav();
+    return true;
+  } catch (e) {
+    meldung(`${still ? 'Automatisches ' : ''}Speichern im Ordner fehlgeschlagen: ${e.message}`);
+    return false;
+  }
+}
+
+async function zugriffErlauben() {
+  if (!ordner) return;
+  if (await rechtHolen()) {
+    if (meta.ungesichert) await inOrdnerSchreiben(true);
+    meldung(`Automatisches Speichern in „${ordner.name}“ ist aktiv.`);
+  }
+  render();
+}
+
+function renderOrdnerBanner() {
+  if (!ordner || !meta.autoOrdner || ordnerRecht === 'granted') return '';
+  return `<div class="banner"><span>Automatisches Speichern in „${esc(ordner.name)}“ ist pausiert.</span>
+    <button class="btn klein" data-a="zugriff">Zugriff erlauben</button></div>`;
+}
+
+// --- Ohne Ordner-Zugriff: Download oder (Handy/Tablet) „In Dateien sichern“ ---
+
+function herunterladen() {
+  const blob = new Blob([dateiInhalt()], { type: 'text/plain;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = DATEINAME;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+  gesichert(DATEINAME);
+  meldung(`„${DATEINAME}“ wurde heruntergeladen.`);
+  render();
+}
+
+async function teilen() {
+  // navigator.share direkt im Klick aufrufen, sonst verweigert der Browser
+  try {
+    await navigator.share({ files: [new File([dateiInhalt()], DATEINAME, { type: 'text/plain' })], title: 'Doppel 15 – Daten' });
+    gesichert(DATEINAME);
+    render();
+  } catch (e) {
+    if (e.name !== 'AbortError') meldung('Sichern fehlgeschlagen: ' + e.message);
+  }
+}
+
+async function dateiLaden() {
+  if (typeof window.showOpenFilePicker === 'function') {
+    try {
+      const [h] = await window.showOpenFilePicker({
+        multiple: false, startIn: ordner || 'documents',
+        types: [{ description: 'Textdatei', accept: { 'text/plain': ['.txt'] } }]
+      });
+      const f = await h.getFile();
+      await textEinlesen(await f.text(), f.name);
+      return;
+    } catch (e) {
+      if (e.name === 'AbortError') return;
+    }
+  }
+  const inp = document.getElementById('dateiInput');
+  inp.value = '';
+  inp.click();
+}
+
+// Regler der Kamera: Wert sofort übernehmen, ohne die Seite neu aufzubauen
+document.addEventListener('input', e => {
+  const c = e.target.dataset && e.target.dataset.c;
+  if (c === 'kamEmpf') { kamEinst.empf = Number(e.target.value); document.getElementById('wertEmpf').textContent = kamEinst.empf; }
+  else if (c === 'kamRuhe') { kamEinst.ruhe = Number(e.target.value); document.getElementById('wertRuhe').textContent = kamEinst.ruhe + ' ms'; }
+  else return;
+  kamSpeichern();
+});
+
+document.getElementById('videoInput').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  quelleSetzen(URL.createObjectURL(f), 'datei');
+  render();
+});
+
+document.getElementById('dateiInput').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  const r = new FileReader();
+  r.onload = () => textEinlesen(String(r.result), f.name);
+  r.onerror = () => meldung('Die Datei konnte nicht gelesen werden.');
+  r.readAsText(f, 'utf-8');
+});
+
+async function textEinlesen(text, name) {
+  let neu;
+  try { neu = parseDatei(text); }
+  catch (e) { await dialog(`Die Datei „${name}“ konnte nicht geladen werden.\n\n${e.message}`, [{ text: 'OK', wert: true }]); return false; }
+
+  const wahl = await dialog(
+    `Datei „${name}“:\n${neu.spieler.length} Spieler, ${neu.trainings.length} Feld-Trainings\n\n` +
+    `Hier im Browser:\n${daten.spieler.length} Spieler, ${daten.trainings.length} Feld-Trainings\n\n` +
+    'Zusammenführen: Beides wird vereint (z. B. wenn auf mehreren Geräten trainiert wurde).\n' +
+    'Ersetzen: Der Stand hier wird durch die Datei ersetzt.',
+    [{ text: 'Abbrechen', wert: null }, { text: 'Ersetzen', wert: 'ersetzen', art: 'gefahr' }, { text: 'Zusammenführen', wert: 'merge', art: 'primaer' }]);
+  if (!wahl) return false;
+
+  if (wahl === 'ersetzen') {
+    daten = neu;
+    if (lauf && !daten.spieler.find(s => s.id === lauf.spieler)) lauf = null;
+    lsSchreiben(LS.daten, daten);
+    laufSpeichern();
+    gesichert(name);
+    meldung('Daten aus der Datei übernommen.');
+  } else {
+    const dateiIds = new Set(neu.trainings.map(t => t.id));
+    const nurHier = daten.trainings.some(t => !dateiIds.has(t.id));
+    const idMap = {};
+    for (const s of neu.spieler) {
+      const da = daten.spieler.find(x => x.id === s.id) || daten.spieler.find(x => nameKey(x.name) === nameKey(s.name));
+      if (da) idMap[s.id] = da.id;
+      else { daten.spieler.push({ ...s }); idMap[s.id] = s.id; }
+    }
+    const vorhanden = new Set(daten.trainings.map(t => t.id));
+    let dazu = 0;
+    for (const t of neu.trainings) {
+      if (vorhanden.has(t.id)) continue;
+      daten.trainings.push({ ...t, spieler: idMap[t.spieler] || t.spieler });
+      dazu++;
+    }
+    daten.trainings.sort((a, b) => Date.parse(a.datum) - Date.parse(b.datum));
+    lsSchreiben(LS.daten, daten);
+    if (nurHier) { meta.ungesichert = true; lsSchreiben(LS.meta, meta); } else gesichert(name);
+    meldung(`${dazu} Feld-Trainings hinzugefügt.`);
+  }
+  farbenZuweisen();
+  lsSchreiben(LS.daten, daten);
+  if (ordner && meta.autoOrdner && ordnerRecht === 'granted' && meta.ungesichert) {
+    schreibKette = schreibKette.then(() => inOrdnerSchreiben(true));
+  }
+  render();
+  return true;
+}
+
+function renderDaten() {
+  const s = summe(daten.trainings);
+  let status;
+  if (!daten.trainings.length) status = '<p class="grau">Noch keine Trainings vorhanden.</p>';
+  else if (meta.ungesichert) status = '<p class="warnung">⚠ Es gibt Trainings, die noch nicht in einer txt-Datei gesichert sind.</p>';
+  else {
+    const d = meta.letzteDatei ? new Date(meta.letzteDatei) : null;
+    status = `<p class="ok">✓ Alles in einer txt-Datei gesichert${d ? ` (${fmtDatum(d)} ${fmtZeit(d)}${meta.dateiName ? `, „${esc(meta.dateiName)}“` : ''})` : ''}.</p>`;
+  }
+
+  let datei;
+  if (fsOrdner) {
+    datei = ordner
+      ? `<p style="margin-top:0">Speicherordner: <b>„${esc(ordner.name)}“</b> – Datei „${DATEINAME}“</p>
+        ${renderOrdnerBanner()}
+        <div class="zeile">
+          <button class="btn primaer" data-a="ordnerSpeichern">Jetzt speichern</button>
+          <button class="btn" data-a="dateiLaden">Aus txt-Datei laden</button>
+          <button class="btn" data-a="ordnerWaehlen">Anderen Ordner …</button>
+          <button class="btn klein gefahr" data-a="ordnerVergessen">Ordner nicht mehr verwenden</button>
+        </div>
+        <div class="zeile abstand"><label><input type="checkbox" data-c="autoOrdner" ${meta.autoOrdner ? 'checked' : ''}> Nach jedem Feld automatisch speichern</label></div>
+        <p class="hinweis">Vor dem ersten Speichern eines Tages wird der alte Stand im Unterordner „Sicherungen“ aufgehoben.
+          Nach einem Neustart des Browsers fragt Chrome/Edge eventuell einmal nach, ob der Zugriff wieder erlaubt ist
+          („Bei jedem Besuch erlauben“ wählen, dann nicht mehr).</p>`
+      : `<p style="margin-top:0">Wählen Sie einmal den Ordner, in dem die Daten liegen sollen – z. B. <b>„dateien doppel_15“</b>
+          (im Auswahlfenster mit „Neuer Ordner“ anlegen). Danach wird automatisch dorthin gespeichert, nicht mehr in „Downloads“.</p>
+        <div class="zeile">
+          <button class="btn primaer" data-a="ordnerWaehlen">Speicherordner wählen …</button>
+          <button class="btn" data-a="dateiLaden">Aus txt-Datei laden</button>
+        </div>
+        <p class="hinweis">Liegt im gewählten Ordner schon eine Datei „${DATEINAME}“, wird sie zuerst übernommen.</p>`;
+  } else if (kannTeilen) {
+    datei = `<div class="zeile">
+        <button class="btn primaer" data-a="teilen">In Dateien sichern …</button>
+        <button class="btn" data-a="dateiLaden">Aus txt-Datei laden</button>
+        <button class="btn klein" data-a="herunterladen">Herunterladen</button>
+      </div>
+      <p class="hinweis">„In Dateien sichern“ antippen und den Ordner <b>„dateien doppel_15“</b> auswählen
+        (beim ersten Mal dort mit „Neuer Ordner“ anlegen). Wenn gefragt wird: vorhandene Datei <b>ersetzen</b>.
+        Auf Android z. B. „Drive“ oder „In Dateien speichern“ wählen.</p>`;
+  } else {
+    datei = `<div class="zeile">
+        <button class="btn primaer" data-a="herunterladen">In txt-Datei speichern</button>
+        <button class="btn" data-a="dateiLaden">Aus txt-Datei laden</button>
+      </div>
+      <p class="hinweis">Dieser Browser speichert in seinen Download-Ordner. Damit die Datei im Ordner „dateien doppel_15“ landet:
+        <b>Firefox:</b> Einstellungen → Allgemein → Downloads → „Jedes Mal nachfragen, wo eine Datei gespeichert werden soll“.
+        <b>Safari (Mac):</b> Einstellungen → Allgemein → „Speicherort für geladene Dateien“ → „Andere …“ (gilt für alle Downloads).
+        Am einfachsten: das Spiel in <b>Chrome oder Edge</b> öffnen – dort wird direkt in den Ordner gespeichert.</p>`;
+  }
+
+  return `<section class="karte"><h2>Speicherung</h2>
+      ${speicherOk
+        ? '<p class="ok" style="margin-top:0">✓ Alle Trainings werden automatisch in diesem Browser gespeichert.</p>'
+        : '<p class="warnung" style="margin-top:0">⚠ Dieser Browser erlaubt kein automatisches Speichern (z. B. privates Fenster). Bitte nach dem Training unbedingt in eine txt-Datei speichern.</p>'}
+      ${status}
+      <p class="hinweis">Der Browser-Speicher gilt nur für diesen Browser auf diesem Gerät. Die txt-Datei dient zur Sicherung und zum Übertragen auf andere Geräte.</p>
+    </section>
+    <section class="karte"><h2>txt-Datei</h2>
+      ${datei}
+      <p class="hinweis">Beim Laden kann man wählen, ob die Datei den Stand hier ersetzt oder mit ihm zusammengeführt wird.</p>
+      <p class="hinweis">Mit <b>Doppel 15</b> austauschbar: Dessen Datei „doppel15-daten.txt“ lässt sich hier laden und zusammenführen –
+        und diese Datei („${DATEINAME}“) dort. Doppel 15 zeigt Kamera-Trainings als „jeder Dart einzeln“.</p>
+    </section>
+    <section class="karte"><h2>Übersicht</h2>
+      <p style="margin:0">${daten.spieler.length} Spieler · ${zahl(new Set(daten.trainings.map(t => t.runde)).size)} Trainings · ${zahl(daten.trainings.length)} Felder · ${zahl(s.darts)} Darts</p>
+    </section>`;
+}
+
+// ---------- Kamera: Scheibe und Einstellungen ----------
+
+// Standard-Maße einer Steeldart-Scheibe (Radius in mm)
+const BRETT = { bull: 6.35, bullAussen: 15.9, triInnen: 99, triAussen: 107, dopInnen: 162, dopAussen: 170, rand: 225 };
+const SEKTOREN = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];   // im Uhrzeigersinn ab oben
+// Einrichtpunkte: Außenkante des Doppelrings an den Grenzen 20|1, 6|10, 3|19, 11|14
+// (w = Winkel in Grad gegen den Uhrzeigersinn ab „3 Uhr“; Scheibenkoordinaten in mm, y nach oben)
+const EICHPUNKTE = [{ name: '20 | 1', w: 81 }, { name: '6 | 10', w: -9 }, { name: '3 | 19', w: -99 }, { name: '11 | 14', w: 171 }]
+  .map(p => ({ ...p, mm: [BRETT.dopAussen * Math.cos(p.w * Math.PI / 180), BRETT.dopAussen * Math.sin(p.w * Math.PI / 180)] }));
+const RICHTUNGEN = { auto: 'automatisch', oben: 'nach oben', unten: 'nach unten', links: 'nach links', rechts: 'nach rechts' };
+
+let kamEinst = Object.assign({
+  geraet: null, geraetName: '',        // gewählte Kamera
+  punkte: null, seitenverh: null,      // 4 Einrichtpunkte im Bild (0–1) und Bildformat beim Einrichten
+  empf: 6, ruhe: 400,                  // Empfindlichkeit 1–10, Ruhezeit in ms
+  richtung: 'auto', gelernt: null,     // wohin die Flights im Bild zeigen (gelernt: Mittel aus eindeutigen Darts)
+  netz: true, diff: false, knapp: 2    // Netz/Unterschied im Bild zeigen; „knapp“ ab so vielen mm am Feldrand
+}, lsLesen(LS.kamera) || {});
+const kamSpeichern = () => lsSchreiben(LS.kamera, kamEinst);
+const schwelle = () => Math.round(48 - 3.6 * kamEinst.empf);   // Helligkeits-Unterschied (0–255), ab dem ein Bildpunkt „neu“ ist
+const minMm2 = () => Math.round(160 - 14 * kamEinst.empf);       // kleinster Dart im Bild, in mm² Scheibenfläche
+
+// ---------- Kamera: Geometrie ----------
+
+function loese(A, b) {   // lineares Gleichungssystem (Gauß mit Pivotsuche)
+  const n = b.length, M = A.map((r, i) => [...r, b[i]]);
+  for (let c = 0; c < n; c++) {
+    let p = c;
+    for (let r = c + 1; r < n; r++) if (Math.abs(M[r][c]) > Math.abs(M[p][c])) p = r;
+    if (Math.abs(M[p][c]) < 1e-12) return null;
+    [M[c], M[p]] = [M[p], M[c]];
+    for (let r = 0; r < n; r++) {
+      if (r === c) continue;
+      const f = M[r][c] / M[c][c];
+      for (let k = c; k <= n; k++) M[r][k] -= f * M[c][k];
+    }
+  }
+  return M.map((r, i) => r[n] / r[i]);
+}
+
+// Homographie aus 4 Punktpaaren: bildet von[i] auf nach[i] ab
+function homographie(von, nach) {
+  const A = [], b = [];
+  for (let i = 0; i < 4; i++) {
+    const [x, y] = von[i], [u, v] = nach[i];
+    A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.push(u);
+    A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); b.push(v);
+  }
+  const h = loese(A, b);
+  return h && h.every(Number.isFinite) ? [...h, 1] : null;
+}
+function abb(H, x, y) {
+  const w = H[6] * x + H[7] * y + H[8];
+  return [(H[0] * x + H[1] * y + H[2]) / w, (H[3] * x + H[4] * y + H[5]) / w, w];
+}
+
+let geo = null;   // { zuBrett: Bild (0–1) → mm, zuBild: mm → Bild, netz: Linien fürs Overlay }
+function geoBerechnen() {
+  geo = null;
+  K.maske = null;
+  const P = kamEinst.punkte;
+  if (!P) return;
+  const mm = EICHPUNKTE.map(p => p.mm);
+  const zuBrett = homographie(P, mm), zuBild = homographie(mm, P);
+  if (!zuBrett || !zuBild) return;
+  const kreis = (r, n = 120) => Array.from({ length: n + 1 }, (_, i) => abb(zuBild, r * Math.cos(i * 2 * Math.PI / n), r * Math.sin(i * 2 * Math.PI / n)));
+  const netz = [BRETT.bull, BRETT.bullAussen, BRETT.triInnen, BRETT.triAussen, BRETT.dopInnen, BRETT.dopAussen].map(r => kreis(r));
+  for (let i = 0; i < 20; i++) {
+    const w = (90 - i * 18 + 9) * Math.PI / 180;
+    netz.push([abb(zuBild, BRETT.bullAussen * Math.cos(w), BRETT.bullAussen * Math.sin(w)), abb(zuBild, BRETT.dopAussen * Math.cos(w), BRETT.dopAussen * Math.sin(w))]);
+  }
+  geo = { zuBrett, zuBild, netz, mitte: abb(zuBild, 0, 0).slice(0, 2) };
+}
+
+// Feld zu einem Punkt auf der Scheibe (mm)
+function feldAusPunkt(x, y) {
+  const r = Math.hypot(x, y);
+  if (r <= BRETT.bull) return { ring: 'B', zahl: 25, name: 'Bull' };
+  if (r <= BRETT.bullAussen) return { ring: 'SB', zahl: 25, name: '25' };
+  if (r > BRETT.dopAussen) return { ring: 'aus', zahl: 0, name: 'außerhalb' };
+  const vonOben = (((90 - Math.atan2(y, x) * 180 / Math.PI) % 360) + 360 + 9) % 360;
+  const zahl = SEKTOREN[Math.min(19, Math.floor(vonOben / 18))];
+  const ring = r >= BRETT.dopInnen ? 'D' : r >= BRETT.triInnen && r <= BRETT.triAussen ? 'T' : 'S';
+  return { ring, zahl, name: (ring === 'S' ? '' : ring) + zahl };
+}
+const trifft = (feld, ziel) => (ziel === 25 ? feld.ring === 'B' : feld.ring === 'D' && feld.zahl === ziel);
+
+// Abstand (mm) eines Punkts zum Rand des Zielfelds – innen wie außen; klein = knapp
+function abstandZiel(x, y, ziel) {
+  const r = Math.hypot(x, y);
+  if (ziel === 25) return Math.abs(r - BRETT.bull);
+  const mitte = (90 - SEKTOREN.indexOf(ziel) * 18) * Math.PI / 180;
+  let d = Math.atan2(y, x) - mitte;
+  d = Math.atan2(Math.sin(d), Math.cos(d));
+  const quer = (Math.abs(d) - 9 * Math.PI / 180) * r;
+  const radial = r < BRETT.dopInnen ? BRETT.dopInnen - r : r > BRETT.dopAussen ? r - BRETT.dopAussen : -Math.min(r - BRETT.dopInnen, BRETT.dopAussen - r);
+  if (quer <= 0 && radial <= 0) return Math.min(-quer, -radial);
+  return Math.hypot(Math.max(quer, 0), Math.max(radial, 0));
+}
+
+// Umriss des Zielfelds im Bild (zum Hervorheben)
+function zielUmriss(ziel) {
+  if (!geo) return null;
+  const pts = [];
+  if (ziel === 25) {
+    for (let i = 0; i <= 40; i++) pts.push(abb(geo.zuBild, BRETT.bull * Math.cos(i * Math.PI / 20), BRETT.bull * Math.sin(i * Math.PI / 20)));
+    return pts;
+  }
+  const mitte = 90 - SEKTOREN.indexOf(ziel) * 18;
+  for (let i = 0; i <= 12; i++) { const w = (mitte - 9 + i * 1.5) * Math.PI / 180; pts.push(abb(geo.zuBild, BRETT.dopAussen * Math.cos(w), BRETT.dopAussen * Math.sin(w))); }
+  for (let i = 12; i >= 0; i--) { const w = (mitte - 9 + i * 1.5) * Math.PI / 180; pts.push(abb(geo.zuBild, BRETT.dopInnen * Math.cos(w), BRETT.dopInnen * Math.sin(w))); }
+  return pts;
+}
+
+function viereckFlaeche(p) {
+  let a = 0;
+  for (let i = 0; i < p.length; i++) { const [x1, y1] = p[i], [x2, y2] = p[(i + 1) % p.length]; a += x1 * y2 - x2 * y1; }
+  return Math.abs(a) / 2;
+}
+
+// ---------- Kamera: Bild holen und vergleichen ----------
+
+const K = {
+  video: null, stream: null, quelle: null, aktiv: false, startet: false, fehler: '', warnung: '', geraete: [],
+  W: 0, H: 0, w: 0, h: 0, cv: null, cx: null, cvk: null, cxk: null,   // Auswertung groß (bis 640 px breit) und klein (160 px, nur Bewegung)
+  ref: null, refLeer: null, refKlein: null, vorher: null,             // Referenzbilder; refLeer = Scheibe ohne Darts dieses Durchgangs
+  maske: null, maskeK: null, maskeAnz: 0, pxProMm: 1,
+  stillSeit: 0, bewegt: false, grossMs: 0, letzteZeit: 0, letztePruefung: 0, letzteAnalyse: 0, seitLeer: 0,
+  status: '', letzte: null, testPunkte: [], diffBild: null, schleife: false,
+  eich: -1, eichNeu: [], justieren: false, gewaehlt: 0, ziehen: null
+};
+
+function videoElement() {
+  if (K.video) return K.video;
+  const v = document.createElement('video');
+  v.muted = true;
+  v.playsInline = true;
+  v.autoplay = true;
+  v.setAttribute('playsinline', '');
+  v.setAttribute('muted', '');
+  v.className = 'kamera-video';   // nicht display:none – sonst liefert Safari keine Bilder
+  document.body.appendChild(v);
+  K.video = v;
+  return v;
+}
+
+function leinwand(W, H) {
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  return c;
+}
+
+// Kasten-Unschärfe (waagerecht, dann senkrecht), Radius r
+function unschaerfe(a, W, H, r) {
+  const t = new Float32Array(a.length), k = 2 * r + 1;
+  for (let y = 0; y < H; y++) {
+    const o = y * W;
+    let s = 0;
+    for (let x = -r; x <= r; x++) s += a[o + Math.min(W - 1, Math.max(0, x))];
+    for (let x = 0; x < W; x++) {
+      t[o + x] = s / k;
+      s += a[o + Math.min(W - 1, x + r + 1)] - a[o + Math.max(0, x - r)];
+    }
+  }
+  for (let x = 0; x < W; x++) {
+    let s = 0;
+    for (let y = -r; y <= r; y++) s += t[Math.min(H - 1, Math.max(0, y)) * W + x];
+    for (let y = 0; y < H; y++) {
+      a[y * W + x] = s / k;
+      s += t[Math.min(H - 1, y + r + 1) * W + x] - t[Math.max(0, y - r) * W + x];
+    }
+  }
+}
+
+// Graustufen (y) und Rot-Grün-Anteil (c, damit ein Dart auf rotem/grünem Ring auffällt), weichgezeichnet
+function bildLesen(gross) {
+  const W = gross ? K.W : K.w, H = gross ? K.H : K.h, cx = gross ? K.cx : K.cxk;
+  cx.drawImage(K.video, 0, 0, W, H);
+  const d = cx.getImageData(0, 0, W, H).data;
+  const n = W * H, y = new Float32Array(n), c = gross ? new Float32Array(n) : null;
+  for (let i = 0, j = 0; i < n; i++, j += 4) {
+    y[i] = 0.299 * d[j] + 0.587 * d[j + 1] + 0.114 * d[j + 2];
+    if (c) c[i] = d[j] - d[j + 1];
+  }
+  unschaerfe(y, W, H, 1);   // nur leicht: die Spitze ist dünn
+  if (c) unschaerfe(c, W, H, 1);
+  return { y, c };
+}
+
+// Bildpunkte, die sich gegenüber der Referenz geändert haben (Helligkeitsänderung der ganzen Szene wird herausgerechnet)
+function unterschied(A, B, maske, thr) {
+  const n = A.y.length;
+  let s = 0, m = 0;
+  for (let i = 0; i < n; i += 7) if (maske[i]) { s += A.y[i] - B.y[i]; m++; }
+  const off = m ? s / m : 0;
+  const out = new Uint8Array(n);
+  let anz = 0;
+  for (let i = 0; i < n; i++) {
+    if (!maske[i]) continue;
+    if (Math.abs(A.y[i] - B.y[i] - off) > thr || (A.c && Math.abs(A.c[i] - B.c[i]) > thr * 1.3)) { out[i] = 1; anz++; }
+  }
+  return { m: out, anz };
+}
+
+function mischen(R, F, a) {
+  for (const k of ['y', 'c']) if (R[k] && F[k]) { const r = R[k], f = F[k]; for (let i = 0; i < r.length; i++) r[i] += (f[i] - r[i]) * a; }
+}
+
+function verbreitern(m, W, H) {
+  const d = new Uint8Array(m.length);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x;
+    if (!m[i]) continue;
+    d[i] = 1;
+    if (x > 0) d[i - 1] = 1;
+    if (x < W - 1) d[i + 1] = 1;
+    if (y > 0) d[i - W] = 1;
+    if (y < H - 1) d[i + W] = 1;
+  }
+  return d;
+}
+
+// Zusammenhängende Bereiche (nach 2 px Verbreitern, damit Spitze, Schaft und Flight zusammenhängen), größter zuerst
+function bereiche(m, W, H) {
+  const d = verbreitern(verbreitern(m, W, H), W, H);
+  const lab = new Uint8Array(m.length), stapel = new Int32Array(m.length), liste = [];
+  for (let i = 0; i < d.length; i++) {
+    if (!d[i] || lab[i]) continue;
+    let sp = 0;
+    const px = [];
+    stapel[sp++] = i; lab[i] = 1;
+    while (sp) {
+      const j = stapel[--sp], x = j % W;
+      if (m[j]) px.push(j);
+      if (x > 0 && d[j - 1] && !lab[j - 1]) { lab[j - 1] = 1; stapel[sp++] = j - 1; }
+      if (x < W - 1 && d[j + 1] && !lab[j + 1]) { lab[j + 1] = 1; stapel[sp++] = j + 1; }
+      if (j >= W && d[j - W] && !lab[j - W]) { lab[j - W] = 1; stapel[sp++] = j - W; }
+      if (j + W < d.length && d[j + W] && !lab[j + W]) { lab[j + W] = 1; stapel[sp++] = j + W; }
+    }
+    if (px.length) liste.push(px);
+  }
+  return liste.sort((a, b) => b.length - a.length);
+}
+
+function rahmen(px, W) {
+  let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+  for (const i of px) { const x = i % W, y = (i / W) | 0; if (x < x0) x0 = x; if (x > x1) x1 = x; if (y < y0) y0 = y; if (y > y1) y1 = y; }
+  return { x0, x1, y0, y1 };
+}
+
+// Ein Dart zerfällt oft in Teile (z. B. schwarzer Schaft auf schwarzem Feld ist unsichtbar):
+// Teile in der Nähe des größten Bereichs (bis etwa eine Dartlänge) gehören zum selben Dart.
+function dartTeile(liste, minF) {
+  if (!liste.length) return null;
+  const r = rahmen(liste[0], K.W), nah = 110 * K.pxProMm, klein = Math.max(6, minF / 8);
+  let px = liste[0];
+  for (const t of liste.slice(1)) {
+    if (t.length < klein) break;
+    const q = rahmen(t, K.W);
+    const dx = Math.max(0, q.x0 - r.x1, r.x0 - q.x1), dy = Math.max(0, q.y0 - r.y1, r.y0 - q.y1);
+    if (Math.hypot(dx, dy) < nah) px = px.concat(t);
+  }
+  return px;
+}
+
+function richtungVektor() {
+  return { oben: [0, -1], unten: [0, 1], links: [-1, 0], rechts: [1, 0] }[kamEinst.richtung] || null;
+}
+
+// Spitze eines Dart-Bereichs schätzen: Längsachse bestimmen; die Spitze ist das schmale Ende (der Flight ist breit).
+// Ist das nicht eindeutig, entscheidet die eingestellte bzw. gelernte Richtung der Flights im Bild.
+function spitzeSchaetzen(px, W) {
+  const n = px.length;
+  let mx = 0, my = 0;
+  for (const i of px) { mx += i % W; my += (i / W) | 0; }
+  mx /= n; my /= n;
+  let sxx = 0, syy = 0, sxy = 0;
+  for (const i of px) { const dx = i % W - mx, dy = ((i / W) | 0) - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
+  const th = 0.5 * Math.atan2(2 * sxy, sxx - syy), ux = Math.cos(th), uy = Math.sin(th);
+  const S = new Float32Array(n), T = new Float32Array(n);
+  let smin = Infinity, smax = -Infinity;
+  px.forEach((i, k) => {
+    const dx = i % W - mx, dy = ((i / W) | 0) - my;
+    S[k] = dx * ux + dy * uy; T[k] = -dx * uy + dy * ux;
+    if (S[k] < smin) smin = S[k];
+    if (S[k] > smax) smax = S[k];
+  });
+  const L = smax - smin, rand = Math.max(3, L * 0.2);
+  let nA = 0, nB = 0;
+  for (let k = 0; k < n; k++) { if (S[k] < smin + rand) nA++; else if (S[k] > smax - rand) nB++; }
+  const verh = (nA + 1) / (nB + 1);                        // < 1: Ende A (−Achse) ist schmaler
+  const eindeutig = L > 12 && (verh < 0.67 || verh > 1.5);
+  const fest = richtungVektor(), g = kamEinst.gelernt;
+  let spitzeA;
+  if (fest) spitzeA = ux * fest[0] + uy * fest[1] > 0;    // Flights zeigen nach +Achse → Spitze bei A
+  else if (eindeutig || !g) spitzeA = verh < 1;
+  else spitzeA = ux * g[0] + uy * g[1] > 0;
+  let ss = 0, tt = 0, c = 0;
+  for (let k = 0; k < n; k++) if (spitzeA ? S[k] <= smin + 2 : S[k] >= smax - 2) { ss += S[k]; tt += T[k]; c++; }
+  ss = ss / c + (spitzeA ? 1 : -1);                         // die Unschärfe hat den Bereich etwas vergrößert
+  tt /= c;
+  const flug = spitzeA ? [ux, uy] : [-ux, -uy];
+  if (!fest && eindeutig && L > 25) {                       // Richtung lernen (für spätere, uneindeutige Darts)
+    const a = g ? [g[0] * 0.8 + flug[0] * 0.2, g[1] * 0.8 + flug[1] * 0.2] : flug, l = Math.hypot(a[0], a[1]) || 1;
+    kamEinst.gelernt = [a[0] / l, a[1] / l];
+    kamSpeichern();
+  }
+  return { x: mx + ss * ux - tt * uy, y: my + ss * uy + tt * ux, laenge: L, sicher: eindeutig || !!fest, flug };
+}
+
+// Die dünne Stahlspitze liegt oft unter dem Schwellwert: vom schmalen Ende aus in Verlängerung der Längsachse
+// weitergehen, solange sich das Bild dort noch schwach (ab 45 % des Schwellwerts) vom Referenzbild unterscheidet.
+function spitzeVerfolgen(sp, F, R, thr) {
+  const [fx, fy] = sp.flug, W = K.W, H = K.H, max = Math.max(4, 25 * K.pxProMm);
+  let x = sp.x, y = sp.y, fehl = 0;
+  for (let k = 1; k <= max; k++) {
+    const px = sp.x - fx * k, py = sp.y - fy * k;
+    let best = 0;
+    for (let q = -1; q <= 1; q++) {
+      const xx = Math.round(px - fy * q), yy = Math.round(py + fx * q);
+      if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
+      const i = yy * W + xx;
+      best = Math.max(best, Math.abs(F.y[i] - R.y[i]), Math.abs(F.c[i] - R.c[i]) / 1.3);
+    }
+    if (best > thr * 0.45) { x = px; y = py; fehl = 0; } else if (++fehl >= 2) break;
+  }
+  return { ...sp, x, y };
+}
+
+function groessePruefen() {
+  const v = K.video, vw = v.videoWidth, vh = v.videoHeight;
+  if (!vw || !vh || v.readyState < 2) return false;
+  const W = Math.min(640, vw), H = Math.round(W * vh / vw);
+  if (W !== K.W || H !== K.H) {
+    K.W = W; K.H = H; K.w = 160; K.h = Math.round(160 * vh / vw);
+    K.cv = leinwand(W, H); K.cx = K.cv.getContext('2d', { willReadFrequently: true });
+    K.cvk = leinwand(K.w, K.h); K.cxk = K.cvk.getContext('2d', { willReadFrequently: true });
+    K.ref = K.refLeer = K.refKlein = K.vorher = null;
+    K.maske = null;
+    K.warnung = kamEinst.punkte && kamEinst.seitenverh && Math.abs(kamEinst.seitenverh - vw / vh) > 0.02
+      ? 'Das Kamerabild hat ein anderes Format als beim Einrichten – bitte die Scheibe neu einrichten.' : '';
+  }
+  if (!K.maske) maskenBerechnen();
+  return true;
+}
+
+// Nur die Scheibe und ihre Umgebung auswerten (bis 300 mm vom Bull) – Bewegungen daneben stören nicht
+function maskenBerechnen() {
+  const mk = (W, H) => {
+    const m = new Uint8Array(W * H);
+    if (!geo) return m.fill(1);
+    const vz = Math.sign(abb(geo.zuBrett, ...geo.mitte)[2]);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      const [bx, by, w] = abb(geo.zuBrett, (x + 0.5) / W, (y + 0.5) / H);
+      m[y * W + x] = Math.sign(w) === vz && Math.hypot(bx, by) < 300 ? 1 : 0;
+    }
+    return m;
+  };
+  K.maske = mk(K.W, K.H);
+  K.maskeK = mk(K.w, K.h);
+  K.maskeAnz = K.maskeK.reduce((a, b) => a + b, 0) || 1;
+  K.pxProMm = geo ? Math.sqrt(viereckFlaeche(kamEinst.punkte.map(([x, y]) => [x * K.W, y * K.H])) / (2 * BRETT.dopAussen ** 2)) : 1;
+}
+
+function referenzNehmen(F) {
+  K.ref = F || bildLesen(true);
+  K.refLeer = { y: K.ref.y.slice(), c: K.ref.c.slice() };
+  K.refKlein = bildLesen(false);
+  K.seitLeer = 0;
+  K.diffBild = null;
+}
+
+function erkennungZuruecksetzen() {
+  K.ref = K.refLeer = K.refKlein = K.vorher = null;
+  K.W = 0;
+  K.stillSeit = performance.now();
+  K.bewegt = false;
+  K.grossMs = 0;
+  K.seitLeer = 0;
+  K.diffBild = null;
+}
+
+// ---------- Kamera: Erkennung (läuft etwa 12-mal je Sekunde, Anzeige etwa 25-mal) ----------
+
+function kameraTakt() {
+  if (!K.aktiv) { K.schleife = false; return; }
+  setTimeout(kameraTakt, 40);   // etwa 25 Bilder je Sekunde fürs Anzeigen; requestAnimationFrame pausiert in verdeckten Fenstern
+  const jetzt = performance.now();
+  try {
+    if (jetzt - K.letzteAnalyse >= 80) { K.letzteAnalyse = jetzt; analysieren(jetzt); }
+    bildZeichnen();
+  } catch (e) { console.error(e); }
+}
+
+function analysieren(jetzt) {
+  if (!groessePruefen()) { statusSetzen('Warte auf das Kamerabild …'); return; }
+  const klein = bildLesen(false);
+  if (K.vorher) {
+    let n = 0;
+    const a = klein.y, b = K.vorher.y, m = K.maskeK;
+    for (let i = 0; i < a.length; i++) if (m[i] && Math.abs(a[i] - b[i]) > 14) n++;
+    if (n > Math.max(4, K.maskeAnz * 0.0015)) {
+      K.stillSeit = jetzt;
+      K.bewegt = true;
+      if (n > K.maskeAnz * 0.04) K.grossMs += jetzt - K.letzteZeit;   // viel Bewegung (Hand, Person)
+    }
+  }
+  K.vorher = klein;
+  K.letzteZeit = jetzt;
+  if (jetzt - K.stillSeit < kamEinst.ruhe) { statusSetzen(K.grossMs > 300 ? 'Bewegung im Bild …' : 'Bewegung …'); return; }
+  if (!K.ref) { referenzNehmen(); statusAktualisieren(); return; }
+  if (!K.bewegt && jetzt - K.letztePruefung < 400) return;
+  const gross = K.grossMs > 500;
+  K.bewegt = false; K.grossMs = 0; K.letztePruefung = jetzt;
+
+  // schneller Vorab-Vergleich im kleinen Bild
+  const kl = unterschied(klein, K.refKlein, K.maskeK, schwelle());
+  const minK = Math.max(3, minMm2() * (K.pxProMm * K.w / K.W) ** 2 * 0.5);
+  if (!gross && kl.anz < minK) {
+    mischen(K.refKlein, klein, 0.1);   // langsame Lichtänderungen übernehmen
+    if (kl.anz < minK / 2 && K.ref) mischen(K.ref, bildLesen(true), 0.1);
+    statusAktualisieren();
+    return;
+  }
+  auswerten(gross, klein);
+}
+
+function auswerten(gross, klein) {
+  const F = bildLesen(true), thr = schwelle(), s2 = K.pxProMm ** 2;
+  const minF = Math.max(8, minMm2() * s2), maxF = 20000 * s2;
+  const neueRef = () => { K.ref = F; K.refKlein = klein; };
+  const warten = kameraWartetAufZiehen();
+
+  // Scheibe wieder wie zu Beginn des Durchgangs → Darts wurden herausgezogen
+  if (K.seitLeer > 0 && K.refLeer && unterschied(F, K.refLeer, K.maske, thr).anz < minF) {
+    referenzNehmen(F); K.refKlein = klein;
+    kameraEreignis('gezogen');
+    return;
+  }
+  const u = unterschied(F, K.ref, K.maske, thr);
+  diffBildSetzen(u.m);
+  if (gross || warten || u.anz > 2 * maxF) {
+    // Hand/Person im Bild, Darts gezogen oder Kamera bewegt: neu beginnen
+    const hatteDarts = K.seitLeer > 0 || warten;
+    referenzNehmen(F); K.refKlein = klein;
+    if (hatteDarts) kameraEreignis('gezogen');
+    else if (u.anz > 2 * maxF && !gross) meldung('Das Bild hat sich stark verändert – neues Referenzbild aufgenommen.');
+    return;
+  }
+  const b = dartTeile(bereiche(u.m, K.W, K.H), minF);
+  if (!b || b.length < minF) { mischen(K.ref, F, 0.3); statusAktualisieren(); return; }
+  if (b.length > maxF) { neueRef(); statusSetzen('Großer Unterschied – kein Dart erkannt'); return; }
+  const sp = spitzeVerfolgen(spitzeSchaetzen(b, K.W), F, K.ref, thr);
+  neueRef();
+  K.seitLeer++;
+  const nx = (sp.x + 0.5) / K.W, ny = (sp.y + 0.5) / K.H;
+  const erg = { nx, ny, sicher: sp.sicher, zeit: Date.now() };
+  if (geo) {
+    const [bx, by] = abb(geo.zuBrett, nx, ny);
+    Object.assign(erg, { bx, by, feld: feldAusPunkt(bx, by) });
+  }
+  K.letzte = erg;
+  kameraEreignis('dart', erg);
+}
+
+function diffBildSetzen(m) {
+  if (!kamEinst.diff) { K.diffBild = null; return; }
+  const c = leinwand(K.W, K.H), cx = c.getContext('2d'), img = cx.createImageData(K.W, K.H);
+  for (let i = 0; i < m.length; i++) if (m[i]) { img.data[i * 4] = 255; img.data[i * 4 + 1] = 40; img.data[i * 4 + 3] = 170; }
+  cx.putImageData(img, 0, 0);
+  K.diffBild = c;
+}
+
+// ---------- Kamera: Verbindung zum Spiel ----------
+
+const kameraImSpiel = () => !!(lauf && lauf.eingabe === 'kamera' && !lauf.fertig);
+function kameraWartetAufZiehen() {
+  if (kameraImSpiel()) return !!lauf.ziehen;
+  return K.seitLeer >= 3;
+}
+
+function kameraEreignis(art, erg) {
+  const L = lauf;
+  if (art === 'dart') {
+    if (kameraImSpiel() && ansicht !== 'kamera') {
+      if (L.pause || !erg.feld) { statusAktualisieren(); return; }
+      const ziel = L.felder[L.idx];
+      dartEingabe(trifft(erg.feld, ziel), {
+        q: 'k', f: erg.feld.name, x: Math.round(erg.bx * 10) / 10, y: Math.round(erg.by * 10) / 10,
+        nx: erg.nx, ny: erg.ny, knapp: abstandZiel(erg.bx, erg.by, ziel) < kamEinst.knapp || !erg.sicher
+      });
+      return;
+    }
+    K.testPunkte = K.testPunkte.concat([erg]).slice(-3);
+    if (ansicht === 'kamera') render();
+    return;
+  }
+  // gezogen
+  K.testPunkte = [];
+  if (kameraImSpiel()) {
+    const fehlen = L.pause ? 0 : (3 - L.darts.length % 3) % 3;
+    if (fehlen && L.darts.length % 3) {
+      for (let i = 0; i < fehlen; i++) dartEingabe(0, { q: 'a' });
+      meldung(`${fehlen === 1 ? 'Ein Dart wurde' : fehlen + ' Darts wurden'} nicht gesehen – als Daneben gezählt. Falls falsch: Rückgängig.`);
+    }
+    if (lauf) { lauf.ziehen = false; laufSpeichern(); }
+    render();
+  } else if (ansicht === 'kamera') render();
+}
+
+// „Darts gezogen“ von Hand (falls die Kamera das Herausziehen nicht bemerkt hat)
+function scheibeLeer() {
+  K.ref = null;   // neues Referenzbild, sobald das Bild ruhig ist
+  K.seitLeer = 0;
+  if (lauf) { lauf.ziehen = false; laufSpeichern(); }
+  K.testPunkte = [];
+  render();
+}
+
+function statusSetzen(t) {
+  if (t === K.status) return;
+  K.status = t;
+  const el = document.getElementById('kameraStatus');
+  if (el) el.textContent = t;
+}
+function statusAktualisieren() {
+  if (!K.aktiv) return statusSetzen(K.startet ? 'Kamera startet …' : 'Kamera aus');
+  if (!K.ref) return statusSetzen('Warte auf ruhiges Bild …');
+  if (!geo) return statusSetzen('Bereit – Scheibe noch nicht eingerichtet');
+  if (kameraWartetAufZiehen()) return statusSetzen('Darts herausziehen …');
+  if (kameraImSpiel() && lauf.pause) return statusSetzen('Pause');
+  statusSetzen('Bereit – werfen');
+}
+
+// ---------- Kamera: starten, wählen, stoppen ----------
+
+function kameraFehlerText(e) {
+  const n = e && e.name;
+  if (n === 'NotAllowedError' || n === 'SecurityError') {
+    return 'Der Zugriff auf die Kamera wurde nicht erlaubt. iPad: in Safari links in der Adressleiste auf „aA“ bzw. das Symbol tippen → ' +
+      'Website-Einstellungen → Kamera → „Erlauben“ (oder Einstellungen → Apps → Safari → Kamera).';
+  }
+  if (n === 'NotFoundError' || n === 'OverconstrainedError') return 'Keine Kamera gefunden. Ist die USB-C-Kamera angeschlossen?';
+  if (n === 'NotReadableError') return 'Die Kamera ist belegt (z. B. von einer anderen App) oder lässt sich nicht öffnen.';
+  return 'Die Kamera ließ sich nicht starten' + (e && e.message ? ': ' + e.message : '.');
+}
+
+const kameraMoeglich = () => !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+
+async function kameraListe() {
+  try {
+    const g = await navigator.mediaDevices.enumerateDevices();
+    K.geraete = g.filter(d => d.kind === 'videoinput' && d.deviceId);
+  } catch (e) { K.geraete = []; }
+}
+
+// merken = vom Benutzer gewählt (sonst: gemerkte Kamera versuchen, bei Bedarf Ersatz nehmen, Auswahl nicht überschreiben)
+async function kameraStarten(id, merken) {
+  if (!kameraMoeglich()) {
+    K.fehler = /^https:$/.test(location.protocol) || location.hostname === 'localhost'
+      ? 'Dieser Browser kann nicht auf eine Kamera zugreifen.'
+      : 'Die Kamera ist nur über eine sichere Webadresse (https) erreichbar – am iPad also über die veröffentlichte Seite, nicht als Datei.';
+    render();
+    return false;
+  }
+  kameraStoppen();
+  K.startet = true;
+  K.fehler = '';
+  render();
+  const groesse = { width: { ideal: 1280 }, height: { ideal: 720 } };
+  let stream = null, fehler = null;
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: id ? { deviceId: { exact: id }, ...groesse } : groesse });
+  } catch (e) {
+    fehler = e;
+    if (id && !merken && e.name !== 'NotAllowedError') {
+      try { stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: groesse }); fehler = null; } catch (e2) { fehler = e2; }
+    }
+  }
+  if (!stream) { K.startet = false; K.fehler = kameraFehlerText(fehler); render(); return false; }
+  quelleSetzen(stream, 'kamera');
+  await kameraListe();
+  const track = stream.getVideoTracks()[0];
+  const einst2 = track && track.getSettings ? track.getSettings() : {};
+  const label = track ? track.label : '';
+  track.addEventListener('ended', () => {
+    if (K.stream !== stream) return;
+    kameraStoppen();
+    K.fehler = 'Die Kamera wurde getrennt.';
+    render();
+  });
+  if (merken) {
+    kamEinst.geraet = einst2.deviceId || id || null;
+    kamEinst.geraetName = label;
+    kamSpeichern();
+  } else if (kamEinst.geraetName && label !== kamEinst.geraetName) {
+    // Gerätekennung hat sich geändert (z. B. Safari): gleiche Kamera am Namen wiederfinden
+    const g = K.geraete.find(d => d.label === kamEinst.geraetName);
+    if (g && g.deviceId !== einst2.deviceId) return kameraStarten(g.deviceId, true);
+  }
+  render();
+  return true;
+}
+
+function quelleSetzen(q, art) {
+  const v = videoElement();
+  if (K.stream && K.stream !== q) K.stream.getTracks().forEach(t => t.stop());
+  K.stream = q instanceof MediaStream ? q : null;
+  if (K.stream) { v.removeAttribute('src'); v.loop = false; v.srcObject = q; }
+  else { v.srcObject = null; v.loop = true; v.src = q; }
+  K.quelle = art;
+  K.aktiv = true;
+  K.startet = false;
+  K.fehler = '';
+  erkennungZuruecksetzen();
+  v.play().catch(() => {});
+  if (!K.schleife) { K.schleife = true; setTimeout(kameraTakt, 40); }
+}
+
+function kameraStoppen() {
+  if (K.stream) K.stream.getTracks().forEach(t => t.stop());
+  K.stream = null;
+  if (K.video) {
+    K.video.pause();
+    if (K.video.src && K.video.src.startsWith('blob:')) URL.revokeObjectURL(K.video.src);
+    K.video.srcObject = null;
+    K.video.removeAttribute('src');
+  }
+  K.aktiv = false;
+  K.quelle = null;
+  K.testPunkte = [];
+  erkennungZuruecksetzen();
+  statusSetzen('Kamera aus');
+}
+
+// Im Training mit Kamera: Kamera starten, falls sie noch nicht läuft
+function kameraSicherstellen() {
+  if (K.aktiv || K.startet || !kameraMoeglich()) return;
+  kameraStarten(kamEinst.geraet, false);
+}
+
+// Kamera ausschalten, wenn sie nirgends gebraucht wird (spart Akku)
+function kameraVerwalten() {
+  const gebraucht = ansicht === 'kamera' || (lauf && lauf.eingabe === 'kamera');
+  if (K.aktiv && K.quelle === 'kamera' && !gebraucht) kameraStoppen();
+}
+
+// ---------- Kamera: Bild und Overlay zeichnen ----------
+
+function linie(c, pts, W, H, zu) {
+  c.beginPath();
+  pts.forEach(([x, y], i) => (i ? c.lineTo(x * W, y * H) : c.moveTo(x * W, y * H)));
+  if (zu) c.closePath();
+}
+
+function markeZeichnen(c, x, y, farbe, s) {
+  c.beginPath();
+  c.arc(x, y, 7 * s, 0, 2 * Math.PI);
+  c.fillStyle = farbe;
+  c.fill();
+  c.lineWidth = 2 * s;
+  c.strokeStyle = '#fff';
+  c.stroke();
+}
+
+function bildZeichnen() {
+  const cv = document.getElementById('kameraBild'), v = K.video;
+  if (!cv || !v || !v.videoWidth) return;
+  const s = window.devicePixelRatio || 1, bw = cv.clientWidth, bh = Math.round(bw * v.videoHeight / v.videoWidth);
+  if (cv.style.height !== bh + 'px') cv.style.height = bh + 'px';
+  const W = Math.round(bw * s), H = Math.round(bh * s);
+  if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
+  const c = cv.getContext('2d');
+  c.drawImage(v, 0, 0, W, H);
+  if (K.diffBild && kamEinst.diff) c.drawImage(K.diffBild, 0, 0, W, H);
+  const einrichten = cv.dataset.modus === 'einrichten';
+
+  const overlay = (lw) => {
+    if (!geo || !(kamEinst.netz || einrichten)) return;
+    c.lineWidth = lw;
+    c.strokeStyle = 'rgba(80, 230, 255, .8)';
+    for (const l of geo.netz) { linie(c, l, W, H); c.stroke(); }
+  };
+  // Zielfeld hervorheben
+  if (kameraImSpiel() && geo && cv.dataset.modus === 'lauf') {
+    const u = zielUmriss(lauf.felder[lauf.idx]);
+    if (u) { linie(c, u, W, H, true); c.fillStyle = 'rgba(242, 194, 48, .35)'; c.fill(); c.lineWidth = 2 * s; c.strokeStyle = '#f2c230'; c.stroke(); }
+  }
+  overlay(1.2 * s);
+
+  // erkannte Darts
+  if (cv.dataset.modus === 'lauf' && lauf) {
+    const n = lauf.darts.length, ab = lauf.pause ? n : n - (n % 3 || (lauf.ziehen ? 3 : 0));
+    for (let i = Math.max(0, ab); i < n; i++) {
+      const x = lauf.info[i];
+      if (x && x.nx != null) markeZeichnen(c, x.nx * W, x.ny * H, lauf.darts[i] ? '#22a45d' : '#e04848', s);
+    }
+  } else {
+    for (const p of K.testPunkte) markeZeichnen(c, p.nx * W, p.ny * H, '#f2c230', s);
+  }
+
+  // Einrichtpunkte und Lupe
+  if (einrichten) {
+    const P = K.eich >= 0 ? K.eichNeu : (kamEinst.punkte || []);
+    P.forEach((p, i) => {
+      if (!p) return;
+      const x = p[0] * W, y = p[1] * H, aktivP = K.justieren && i === K.gewaehlt;
+      c.lineWidth = 2 * s;
+      c.strokeStyle = aktivP ? '#f2c230' : '#fff';
+      c.beginPath(); c.arc(x, y, (aktivP ? 14 : 10) * s, 0, 2 * Math.PI); c.stroke();
+      c.beginPath(); c.moveTo(x - 18 * s, y); c.lineTo(x + 18 * s, y); c.moveTo(x, y - 18 * s); c.lineTo(x, y + 18 * s); c.stroke();
+      c.font = `${14 * s}px system-ui, sans-serif`;
+      c.fillStyle = aktivP ? '#f2c230' : '#fff';
+      c.fillText(EICHPUNKTE[i].name, x + 16 * s, y - 14 * s);
+    });
+    if (K.justieren && kamEinst.punkte) {
+      // Lupe: dreifach vergrößert, in der Ecke gegenüber dem gewählten Punkt
+      const [px, py] = kamEinst.punkte[K.gewaehlt], z = 3, gr = Math.min(W, H) * 0.42;
+      const lx = px < 0.5 ? W - gr - 8 * s : 8 * s, ly = py < 0.5 ? H - gr - 8 * s : 8 * s;
+      c.save();
+      c.beginPath(); c.rect(lx, ly, gr, gr); c.clip();
+      c.setTransform(z, 0, 0, z, lx + gr / 2 - px * W * z, ly + gr / 2 - py * H * z);
+      c.drawImage(v, 0, 0, W, H);
+      overlay(1.2 * s / z);
+      c.restore();
+      c.lineWidth = 2 * s;
+      c.strokeStyle = '#f2c230';
+      c.strokeRect(lx, ly, gr, gr);
+      c.beginPath();
+      c.moveTo(lx + gr / 2 - 12 * s, ly + gr / 2); c.lineTo(lx + gr / 2 + 12 * s, ly + gr / 2);
+      c.moveTo(lx + gr / 2, ly + gr / 2 - 12 * s); c.lineTo(lx + gr / 2, ly + gr / 2 + 12 * s);
+      c.stroke();
+    }
+  }
+}
+
+// ---------- Kamera: Einrichten (4 Punkte antippen, verschieben) ----------
+
+function bildPunkt(e, cv) {
+  const r = cv.getBoundingClientRect();
+  return [Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))];
+}
+
+function eichungFertig(punkte) {
+  kamEinst.punkte = punkte;
+  kamEinst.seitenverh = K.video && K.video.videoHeight ? K.video.videoWidth / K.video.videoHeight : null;
+  kamEinst.gelernt = null;
+  kamSpeichern();
+  geoBerechnen();
+  K.warnung = '';
+  K.ref = null;
+}
+
+document.addEventListener('pointerdown', e => {
+  const cv = e.target;
+  if (cv.id !== 'kameraBild' || cv.dataset.modus !== 'einrichten' || !K.aktiv) return;
+  const p = bildPunkt(e, cv);
+  if (K.eich >= 0) {
+    e.preventDefault();
+    K.eichNeu[K.eich] = p;
+    K.eich++;
+    if (K.eich === 4) {
+      K.eich = -1;
+      eichungFertig(K.eichNeu.slice());
+      if (!geo) { meldung('Die Punkte passen nicht zusammen – bitte neu einrichten.'); kamEinst.punkte = null; kamSpeichern(); }
+      else { K.justieren = true; K.gewaehlt = 0; meldung('Eingerichtet. Passt das Netz auf die Drähte? Sonst Punkte verschieben.'); }
+    }
+    render();
+    return;
+  }
+  if (!K.justieren || !kamEinst.punkte) return;
+  // nächsten Punkt greifen (innerhalb von 60 px) und relativ verschieben – der Finger verdeckt ihn nicht
+  const r = cv.getBoundingClientRect();
+  let best = -1, bd = 60;
+  kamEinst.punkte.forEach(([x, y], i) => { const d = Math.hypot((x - p[0]) * r.width, (y - p[1]) * r.height); if (d < bd) { bd = d; best = i; } });
+  if (best < 0) return;
+  e.preventDefault();
+  K.gewaehlt = best;
+  K.ziehen = { start: p, punkt: kamEinst.punkte[best].slice(), id: e.pointerId };
+  try { cv.setPointerCapture(e.pointerId); } catch (x) { /* egal */ }
+  render();
+});
+document.addEventListener('pointermove', e => {
+  if (!K.ziehen || e.pointerId !== K.ziehen.id) return;
+  const cv = document.getElementById('kameraBild');
+  if (!cv) return;
+  const p = bildPunkt(e, cv), z = K.ziehen;
+  kamEinst.punkte[K.gewaehlt] = [Math.min(1, Math.max(0, z.punkt[0] + (p[0] - z.start[0]) * 0.5)), Math.min(1, Math.max(0, z.punkt[1] + (p[1] - z.start[1]) * 0.5))];
+  geoBerechnen();
+});
+const ziehenEnde = e => {
+  if (!K.ziehen || e.pointerId !== K.ziehen.id) return;
+  K.ziehen = null;
+  eichungFertig(kamEinst.punkte);
+};
+document.addEventListener('pointerup', ziehenEnde);
+document.addEventListener('pointercancel', ziehenEnde);
+
+function eichSchieben(dx, dy) {
+  if (!kamEinst.punkte || !K.video || !K.video.videoWidth) return;
+  const p = kamEinst.punkte[K.gewaehlt];
+  kamEinst.punkte[K.gewaehlt] = [p[0] + dx / K.video.videoWidth, p[1] + dy / K.video.videoHeight];
+  eichungFertig(kamEinst.punkte);
+}
+
+// Kleine Scheibe als Hilfe: welcher Punkt ist anzutippen
+function brettSvg(aktiv) {
+  const R = 100, k = R / BRETT.dopAussen;
+  let h = `<svg viewBox="-128 -128 256 256" width="150" height="150" aria-hidden="true">
+    <circle r="${R}" fill="#1d1d1d" stroke="#555"/><circle r="${R}" fill="none" stroke="#a33" stroke-width="${8 * k}" transform="scale(${(BRETT.dopAussen - 4) / BRETT.dopAussen})"/>`;
+  for (let i = 0; i < 20; i++) {
+    const a = (i * 18 - 9) * Math.PI / 180, b = i * 18 * Math.PI / 180;
+    h += `<line x1="${(16 * k * Math.sin(a)).toFixed(1)}" y1="${(-16 * k * Math.cos(a)).toFixed(1)}" x2="${(R * Math.sin(a)).toFixed(1)}" y2="${(-R * Math.cos(a)).toFixed(1)}" stroke="#555" stroke-width="1"/>
+      <text x="${(116 * Math.sin(b)).toFixed(1)}" y="${(-116 * Math.cos(b) + 5).toFixed(1)}" text-anchor="middle" font-size="14" fill="#9db0a6">${SEKTOREN[i]}</text>`;
+  }
+  EICHPUNKTE.forEach((p, i) => {
+    const x = p.mm[0] * k, y = -p.mm[1] * k, an = i === aktiv;
+    h += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${an ? 9 : 5}" fill="${an ? '#f2c230' : i < aktiv ? '#22a45d' : '#9db0a6'}" stroke="#0f1412" stroke-width="2"/>`;
+  });
+  return h + '</svg>';
+}
+
+// ---------- Kamera: Ansicht ----------
+
+function kameraBildHtml(modus) {
+  if (!K.aktiv) {
+    return `<div class="kamera-leer">${K.startet ? 'Kamera startet …' : `Kamera aus<br>
+      <button class="btn primaer" data-a="kameraStart" style="margin-top:12px">Kamera starten</button>`}</div>`;
+  }
+  return `<canvas id="kameraBild" class="kamerabild ${modus === 'einrichten' ? 'einrichten' : ''}" data-modus="${modus}"></canvas>`;
+}
+
+function renderKamera() {
+  let h = '';
+  if (!kameraMoeglich()) {
+    h += `<div class="banner"><span>Die Kamera ist hier nicht verfügbar. Sie funktioniert nur über eine sichere Webadresse (https),
+      am iPad also über die veröffentlichte Seite – nicht beim Öffnen als Datei.</span></div>`;
+  }
+  const ger = K.geraete;
+  const aktuelleId = K.stream ? (K.stream.getVideoTracks()[0].getSettings().deviceId || kamEinst.geraet) : kamEinst.geraet;
+  h += `<section class="karte"><h2>1. Kamera</h2>
+    <div class="zeile">
+      <select class="spielerwahl" data-c="kameraWahl" aria-label="Kamera">
+        ${ger.length ? '' : `<option value="">${kamEinst.geraetName ? esc(kamEinst.geraetName) : 'Standard-Kamera'}</option>`}
+        ${ger.map((g, i) => `<option value="${esc(g.deviceId)}" ${g.deviceId === aktuelleId ? 'selected' : ''}>${esc(g.label || 'Kamera ' + (i + 1))}</option>`).join('')}
+      </select>
+      ${K.aktiv ? `<button class="btn" data-a="kameraStopp">Stoppen</button>` : `<button class="btn primaer" data-a="kameraStart">Kamera starten</button>`}
+      <button class="btn klein" data-a="kameraSuchen">Kameras suchen</button>
+    </div>
+    ${K.fehler ? `<p class="hinweis warnung">${esc(K.fehler)}</p>` : ''}
+    ${K.quelle && K.quelle !== 'kamera' ? `<p class="hinweis warnung">Es läuft ein Testvideo statt der Kamera.</p>` : ''}
+    <p class="hinweis">iPad: USB-C-Kamera anstecken, dann „Kameras suchen“ und sie in der Liste wählen (ab iPadOS 17).
+      Die Namen der Kameras zeigt der Browser erst, nachdem der Zugriff einmal erlaubt wurde. Die Auswahl wird gemerkt.</p>
+    <details class="tabelle-auf"><summary>Testvideo statt Kamera (zum Ausprobieren am Computer)</summary>
+      <div class="zeile abstand"><button class="btn klein" data-a="testvideo">Videodatei wählen …</button></div></details>
+  </section>`;
+
+  if (kameraImSpiel()) {
+    h = `<div class="banner"><span>Ein Training läuft. Solange diese Seite offen ist, zählen Würfe nur als Test.</span>
+      <button class="btn klein" data-a="tab" data-v="training">Zurück zum Training</button></div>` + h;
+  }
+  // Einrichten
+  h += `<section class="karte"><h2>2. Scheibe einrichten ${kamEinst.punkte ? '<span class="ok">✓</span>' : ''}</h2>
+    ${K.warnung ? `<p class="warnung" style="margin-top:0">⚠ ${esc(K.warnung)}</p>` : ''}
+    ${kameraBildHtml('einrichten')}`;
+  if (K.eich >= 0) {
+    h += `<div class="eich-anleitung">${brettSvg(K.eich)}
+      <div><div class="eich-schritt">Punkt ${K.eich + 1} von 4: Grenze <b>${EICHPUNKTE[K.eich].name}</b></div>
+      <p style="margin:6px 0 10px">Im Bild genau dorthin tippen, wo der <b>äußere Rand des Doppelrings</b> auf den Draht zwischen
+        <b>${EICHPUNKTE[K.eich].name.replace(' | ', '</b> und <b>')}</b> trifft.</p>
+      <button class="btn klein" data-a="eichAbbrechen">Abbrechen</button></div></div>`;
+  } else {
+    h += `<div class="zeile abstand">
+      <button class="btn ${kamEinst.punkte ? '' : 'primaer'}" data-a="eichStart" ${K.aktiv ? '' : 'disabled'}>${kamEinst.punkte ? 'Neu einrichten' : 'Einrichten: 4 Punkte antippen'}</button>
+      ${kamEinst.punkte ? `<button class="btn ${K.justieren ? 'an' : ''}" data-a="justieren" ${K.aktiv ? '' : 'disabled'}>Feinjustieren</button>` : ''}
+      <label><input type="checkbox" data-c="kamNetz" ${kamEinst.netz ? 'checked' : ''}> Netz im Training zeigen</label>
+    </div>`;
+    if (K.justieren && kamEinst.punkte) {
+      h += `<div class="justier">
+        <div class="segment">${EICHPUNKTE.map((p, i) => `<button class="btn klein ${i === K.gewaehlt ? 'an' : ''}" data-a="eichWahl" data-i="${i}">${p.name}</button>`).join('')}</div>
+        <div class="pfeile">
+          <span></span><button class="btn" data-a="eichSchieben" data-dx="0" data-dy="-1" aria-label="hoch">▲</button><span></span>
+          <button class="btn" data-a="eichSchieben" data-dx="-1" data-dy="0" aria-label="links">◀</button>
+          <button class="btn primaer" data-a="justieren">Fertig</button>
+          <button class="btn" data-a="eichSchieben" data-dx="1" data-dy="0" aria-label="rechts">▶</button>
+          <span></span><button class="btn" data-a="eichSchieben" data-dx="0" data-dy="1" aria-label="runter">▼</button><span></span>
+        </div></div>
+        <p class="hinweis">Das hellblaue Netz soll genau auf den Drähten liegen. Einen Punkt im Bild greifen und ziehen
+          (bewegt sich halb so schnell wie der Finger) oder mit den Pfeilen in kleinen Schritten verschieben. Die Lupe zeigt den gewählten Punkt vergrößert.</p>`;
+    } else if (!kamEinst.punkte) {
+      h += `<p class="hinweis">Kamera so befestigen, dass sie sich nicht bewegt, dann einrichten. Wird die Kamera verschoben, muss neu eingerichtet werden.</p>`;
+    }
+  }
+  h += `</section>`;
+
+  // Erkennung testen
+  const t = K.testPunkte[K.testPunkte.length - 1];
+  h += `<section class="karte"><h2>3. Erkennung testen und einstellen</h2>
+    <div class="kamera-status" id="kameraStatus">${esc(K.status || 'Kamera aus')}</div>
+    <div class="ergebnis ${t ? '' : 'leer'}">${t
+      ? `<div class="erg-text">${t.feld ? esc(t.feld.name) : '?'}</div>
+         <div class="erg-info">${t.feld ? 'erkanntes Feld' : 'Veränderung erkannt – Scheibe noch nicht eingerichtet'}${t.sicher ? '' : ' · <span class="warnung">Spitze unsicher</span>'}</div>`
+      : 'Einen Dart werfen – das erkannte Feld erscheint hier und im Bild (gelber Punkt).'}</div>
+    <div class="zeile">
+      <button class="btn" data-a="scheibeLeer" ${K.aktiv ? '' : 'disabled'}>Referenzbild neu (Scheibe leer)</button>
+      <label><input type="checkbox" data-c="kamDiff" ${kamEinst.diff ? 'checked' : ''}> Unterschiede rot zeigen</label>
+    </div>
+    <div class="regler">
+      <span>Empfindlichkeit</span><input type="range" min="1" max="10" step="1" value="${kamEinst.empf}" data-c="kamEmpf" aria-label="Empfindlichkeit">
+      <b id="wertEmpf">${kamEinst.empf}</b>
+      <span>Ruhezeit</span><input type="range" min="300" max="800" step="50" value="${kamEinst.ruhe}" data-c="kamRuhe" aria-label="Ruhezeit">
+      <b id="wertRuhe">${kamEinst.ruhe} ms</b>
+    </div>
+    <p class="hinweis" id="wertSchwelle">Schwellwert ${schwelle()} (Helligkeit 0–255), kleinster Dart ${minMm2()} mm².
+      Höhere Empfindlichkeit erkennt dunkle Darts auf dunklen Feldern besser, reagiert aber auch eher auf Schatten und Rauschen.
+      Ruhezeit: so lange muss das Bild nach dem Wurf still sein, bevor ausgewertet wird.</p>
+    <div class="zeile abstand">
+      <label>Flights zeigen im Bild <select data-c="kamRichtung">${Object.entries(RICHTUNGEN).map(([k, v]) =>
+        `<option value="${k}" ${kamEinst.richtung === k ? 'selected' : ''}>${v}</option>`).join('')}</select></label>
+      <label>„Knapp“ unter <select data-c="kamKnapp">${[0, 1, 2, 3].map(n =>
+        `<option value="${n}" ${kamEinst.knapp === n ? 'selected' : ''}>${n ? n + ' mm' : 'nie'}</option>`).join('')}</select></label>
+    </div>
+    <p class="hinweis">Die Spitze wird am schmalen Ende des erkannten Darts vermutet (der Flight ist breit). Liegt sie oft am falschen Ende,
+      hier die Richtung einstellen, in die die Flights im Kamerabild zeigen. Liegt ein Treffer näher als „knapp“ am Feldrand, wird um Prüfung gebeten.</p>
+  </section>`;
+
+  h += `<section class="karte"><h2>Tipps für Kamera und Licht</h2>
+    <ul class="tipps">
+      <li><b>Schräg von der Seite oder von unten</b>, nicht von vorn: Von vorn verdeckt der Flight die Spitze. Gut sind 30–60° zur Scheibe,
+        z. B. unten oder seitlich am Rand des Scheibenschranks bzw. Lichtrings.</li>
+      <li><b>Nah</b>, aber die ganze Scheibe im Bild – je größer das Doppel im Bild, desto genauer.</li>
+      <li><b>Fest montieren.</b> Schon ein leicht verschobenes Kabel verstellt die Einrichtung.</li>
+      <li><b>Gleichmäßiges Licht</b> (z. B. LED-Ring), keine Sonne oder flackerndes Licht. Schatten der Darts sind möglichst kurz.</li>
+      <li>Beim Wurf nicht vor die Kamera treten. Nach drei Darts erkennt die Kamera das Herausziehen und beginnt neu.</li>
+      <li>Darts, die die Scheibe verfehlen, sieht die Kamera nicht: Sie werden beim Herausziehen als „Daneben“ ergänzt – oder gleich von Hand eingeben.</li>
+      <li>Eine Kamera sieht weniger als Systeme mit drei Kameras: Jedes Ergebnis ist ein <b>Vorschlag</b> und mit einem Tipp korrigierbar.</li>
+    </ul>
+  </section>`;
+  return h;
+}
+
+// Ergebnis des letzten Darts (im Training mit Kamera)
+function letzterDart() {
+  const L = lauf;
+  if (!L || !jeDart(L.eingabe)) return null;
+  if (!L.pause && !L.fertig && L.darts.length) {
+    const i = L.darts.length - 1;
+    return { treffer: L.darts[i], info: L.info[i] || { q: 'h' } };
+  }
+  if ((L.pause || L.fertig) && !L.abgebrochen && L.erledigt.length) {
+    const rec = daten.trainings.find(t => t.id === L.erledigt[L.erledigt.length - 1]);
+    if (rec && rec.darts) return { treffer: rec.darts[rec.darts.length - 1], info: L.letzteInfo || { q: 'h' }, rec };
+  }
+  return null;
+}
+
+function korrigieren() {
+  const L = lauf, d = letzterDart();
+  if (!d) return;
+  const inf = d.info;
+  if (d.rec) {
+    const r = d.rec, i = r.darts.length - 1;
+    r.darts[i] = r.darts[i] ? 0 : 1;
+    r.treffer = inDurchgaenge(r.darts);
+    r.gesamt = r.treffer.reduce((a, b) => a + b, 0);
+    if (inf.q !== 'h') {
+      inf.korr = !inf.korr;
+      if (r.eingabe === 'kamera') r.korrigiert = Math.max(0, (r.korrigiert || 0) + (inf.korr ? 1 : -1));
+    }
+    L.letzteInfo = inf;
+    datenGeaendert();
+  } else {
+    const i = L.darts.length - 1;
+    L.darts[i] = L.darts[i] ? 0 : 1;
+    if (inf.q !== 'h') inf.korr = !inf.korr;
+    L.info[i] = inf;
+  }
+  vibrieren();
+  laufSpeichern();
+  render();
+  meldung(`Geändert auf ${d.treffer ? 'Daneben' : 'Treffer'}.`);
+}
+
+function renderErgebnis() {
+  const d = letzterDart();
+  if (!d) return `<div class="ergebnis leer">${K.aktiv ? 'Warte auf den ersten Dart …' : 'Kamera aus – Eingabe von Hand möglich'}</div>`;
+  const inf = d.info || { q: 'h' };
+  const quelle = inf.q === 'k' ? `Kamera: <b>${esc(inf.f)}</b>` : inf.q === 'a' ? 'nicht gesehen – als Daneben gezählt' : 'von Hand eingegeben';
+  return `<div class="ergebnis ${d.treffer ? 'treffer' : 'daneben'}">
+    <div class="erg-text">${d.treffer ? 'Treffer' : 'Daneben'}</div>
+    <div class="erg-info">${quelle}${inf.korr ? ' · korrigiert' : ''}${inf.knapp && !inf.korr ? ' · <span class="warnung">knapp – bitte prüfen</span>' : ''}</div>
+    <button class="btn" data-a="korrigieren">Falsch? → ${d.treffer ? 'Daneben' : 'Treffer'}</button>
+  </div>`;
+}
+
+function kameraPanel() {
+  let h = kameraBildHtml('lauf');
+  h += `<div class="kamera-status" id="kameraStatus">${esc(K.status || '')}</div>`;
+  if (K.aktiv && !geo) h += `<p class="hinweis warnung" style="text-align:center">Scheibe nicht eingerichtet – unter „Kamera“ einrichten. Bis dahin von Hand eingeben.</p>`;
+  if (K.fehler) h += `<p class="hinweis warnung" style="text-align:center">${esc(K.fehler)}</p>`;
+  if (K.aktiv && lauf && lauf.ziehen) h += `<div class="zeile mitte"><button class="btn klein" data-a="scheibeLeer">Darts sind gezogen</button></div>`;
+  return h;
+}
+
+// Für Tests (z. B. mit einem künstlichen Kamerabild): window.doppelKamera.quelle(stream), .einrichten(punkte)
+window.doppelKamera = {
+  quelle: (q) => { quelleSetzen(q, 'test'); render(); },
+  einrichten: (punkte) => { eichungFertig(punkte); render(); },
+  zustand: () => ({ status: K.status, letzte: K.letzte, ref: !!K.ref, pxProMm: K.pxProMm, seitLeer: K.seitLeer, W: K.W, H: K.H }),
+  feldAusPunkt
+};
+
+geoBerechnen();
+
+// ---------- Bedienung ----------
+
+function setDg(n) {
+  if (!Number.isFinite(n)) n = 5;
+  einst.durchgaenge = Math.max(1, Math.min(100, Math.round(n)));
+  einstSpeichern();
+  render();
+}
+
+const aktionen = {
+  tab: el => { ansicht = el.dataset.v; render(); window.scrollTo(0, 0); },
+  neuAbbrechen: () => { neuerSpielerOffen = false; render(); },
+  feld: el => {
+    const f = Number(el.dataset.f), i = einst.felder.indexOf(f);
+    if (i >= 0) einst.felder.splice(i, 1); else einst.felder.push(f);
+    einst.felder.sort((a, b) => a - b);
+    einstSpeichern(); render();
+  },
+  felderAlle: () => { einst.felder = FELDER.slice(); einstSpeichern(); render(); },
+  felderKeine: () => { einst.felder = []; einstSpeichern(); render(); },
+  reihenfolge: el => { einst.reihenfolge = el.dataset.w; einstSpeichern(); render(); },
+  dg: el => setDg(Number(el.dataset.w)),
+  dgMinus: () => setDg(einst.durchgaenge - 1),
+  dgPlus: () => setDg(einst.durchgaenge + 1),
+  start: () => starten(),
+  treffer: el => eingabe(Number(el.dataset.n)),
+  dart: el => dartEingabe(Number(el.dataset.n)),
+  feldGesamt: el => feldGesamt(Number(el.dataset.n)),
+  feldGesamtFeld: () => feldGesamt(parseInt(document.getElementById('gesamtZahl').value, 10)),
+  eingabeArt: el => {
+    if (!einst.spieler) return;
+    einst.eingabeJe = Object.assign({}, einst.eingabeJe, { [einst.spieler]: el.dataset.w });
+    einstSpeichern();
+    render();
+  },
+  rueck: () => rueckgaengig(),
+  weiter: () => weiter(),
+  beenden: () => trainingBeenden(),
+  nochmal: () => starten({ spieler: lauf.spieler, felder: lauf.auswahl, durchgaenge: lauf.durchgaenge, reihenfolge: lauf.reihenfolge, eingabe: lauf.eingabe }),
+  neu: () => { lauf = null; laufSpeichern(); render(); window.scrollTo(0, 0); },
+  spielerNeu: () => spielerNeu(),
+  umbenennen: el => umbenennen(el.dataset.id),
+  spielerLoeschen: el => spielerLoeschen(el.dataset.id),
+  spielerZurueck: el => spielerZurueck(el.dataset.id),
+  statZeit: el => { statF.zeitraum = el.dataset.w; statF.alle = false; statSpeichern(); render(); },
+  statGruppe: el => { statF.gruppe = el.dataset.w; statSpeichern(); render(); },
+  statSort: el => { statF.sort = el.dataset.w; statSpeichern(); render(); },
+  statAlle: () => { statF.alle = true; render(); },
+  trLoeschen: async el => {
+    const t = daten.trainings.find(x => x.id === el.dataset.id);
+    if (!t) return;
+    const s = summe([t]);
+    const ok = await dialog(`Dieses Training löschen?\n\n${fmtDatum(new Date(t.datum))} · ${spielerName(t.spieler)} · ${feldName(t.feld)} · ${s.treffer}/${s.darts}`,
+      [{ text: 'Abbrechen', wert: null }, { text: 'Löschen', wert: true, art: 'gefahr' }]);
+    if (!ok) return;
+    daten.trainings = daten.trainings.filter(x => x.id !== t.id);
+    datenGeaendert();
+    render();
+  },
+  ordnerWaehlen: () => ordnerWaehlen(),
+  ordnerSpeichern: () => inOrdnerSchreiben(false),
+  ordnerVergessen: () => ordnerVergessen(),
+  zugriff: () => zugriffErlauben(),
+  teilen: () => teilen(),
+  herunterladen: () => herunterladen(),
+  dateiLaden: () => dateiLaden(),
+  korrigieren: () => korrigieren(),
+  scheibeLeer: () => scheibeLeer(),
+  kameraStart: () => kameraStarten(kamEinst.geraet, true),
+  kameraStopp: () => { kameraStoppen(); K.justieren = false; K.eich = -1; render(); },
+  kameraSuchen: async () => {
+    if (!kameraMoeglich()) return;
+    if (!K.aktiv) await kameraStarten(kamEinst.geraet, false);   // Namen gibt es erst nach der Erlaubnis
+    await kameraListe();
+    render();
+    meldung(`${K.geraete.length} ${K.geraete.length === 1 ? 'Kamera' : 'Kameras'} gefunden.`);
+  },
+  testvideo: () => { const i = document.getElementById('videoInput'); i.value = ''; i.click(); },
+  eichStart: () => { K.eich = 0; K.eichNeu = []; K.justieren = false; render(); },
+  eichAbbrechen: () => { K.eich = -1; render(); },
+  justieren: () => { K.justieren = !K.justieren; render(); },
+  eichWahl: el => { K.gewaehlt = Number(el.dataset.i); render(); },
+  eichSchieben: el => eichSchieben(Number(el.dataset.dx), Number(el.dataset.dy))
+};
+
+document.addEventListener('click', e => {
+  const el = e.target.closest('[data-a]');
+  if (!el || el.disabled || document.querySelector('.overlay')) return;
+  const f = aktionen[el.dataset.a];
+  if (f) f(el);
+});
+
+document.addEventListener('change', e => {
+  const c = e.target.dataset.c;
+  if (!c) return;
+  if (c === 'dg') setDg(parseInt(e.target.value, 10));
+  else if (c === 'spielerWahl') {
+    if (e.target.value === '__neu') {
+      neuerSpielerOffen = true;
+      render();
+      const inp = document.getElementById('neuName');
+      if (inp) inp.focus();
+    } else {
+      einst.spieler = e.target.value;
+      neuerSpielerOffen = false;
+      einstSpeichern();
+      render();
+    }
+  }
+  else if (c === 'statSpieler') { statF.spieler = e.target.value; statF.alle = false; statSpeichern(); render(); }
+  else if (c === 'statVon') { statF.von = e.target.value; statSpeichern(); render(); }
+  else if (c === 'statBis') { statF.bis = e.target.value; statSpeichern(); render(); }
+  else if (c === 'kameraWahl') { if (e.target.value) kameraStarten(e.target.value, true); }
+  else if (c === 'kamNetz') { kamEinst.netz = e.target.checked; kamSpeichern(); }
+  else if (c === 'kamDiff') { kamEinst.diff = e.target.checked; K.diffBild = null; kamSpeichern(); }
+  else if (c === 'kamRichtung') { kamEinst.richtung = e.target.value; kamSpeichern(); }
+  else if (c === 'kamKnapp') { kamEinst.knapp = Number(e.target.value); kamSpeichern(); }
+  else if (c === 'kamEmpf' || c === 'kamRuhe') render();
+  else if (c === 'autoOrdner') {
+    meta.autoOrdner = e.target.checked;
+    lsSchreiben(LS.meta, meta);
+    if (meta.autoOrdner && meta.ungesichert) inOrdnerSchreiben(false);
+    else render();
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (document.querySelector('.overlay')) return;
+  const ziel = e.target;
+  if (ziel.matches && ziel.matches('input, select, textarea')) {
+    if (e.key === 'Enter' && ziel.id === 'neuName') { e.preventDefault(); spielerNeu(); }
+    return;
+  }
+  if ((e.key === 'Enter' || e.key === ' ') && ziel.closest && ziel.closest('button')) return; // Knopf löst selbst aus
+  if (ansicht !== 'training' || !lauf || lauf.fertig || e.ctrlKey || e.metaKey || e.altKey) return;
+  if (lauf.pause) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); weiter(); }
+    else if ((e.key === 'k' || e.key === 'K') && lauf.eingabe === 'kamera') { e.preventDefault(); korrigieren(); }
+    else if (e.key === 'Backspace') { e.preventDefault(); rueckgaengig(); }
+    return;
+  }
+  if (e.key === 'Backspace') { e.preventDefault(); rueckgaengig(); }
+  else if (jeDart(lauf.eingabe)) {
+    if (e.key === 'k' || e.key === 'K') { e.preventDefault(); korrigieren(); }
+    else if (e.key === '1' || e.key === '+') { e.preventDefault(); dartEingabe(1); }
+    else if (e.key === '0' || e.key === '-') { e.preventDefault(); dartEingabe(0); }
+  }
+  else if (lauf.eingabe === 'durchgang' && /^[0-3]$/.test(e.key)) { e.preventDefault(); eingabe(Number(e.key)); }
+});
+
+farbenZuweisen();
+lsSchreiben(LS.daten, daten);
+if (lauf && !lauf.fertig) wachHalten(true);
+render();
+if (lauf && lauf.eingabe === 'kamera' && !lauf.fertig) kameraSicherstellen();
+ordnerInit();
+</script>
+</body>
+</html>
