@@ -2,7 +2,7 @@
 // Vorgehen: immer zuerst die aktuelle Fassung aus dem Netz holen und merken;
 // ohne Netz (oder nach 4 Sekunden ohne Antwort) die gemerkte Fassung verwenden.
 
-const CACHE = 'doppelkamera-v6';
+const CACHE = 'doppelkamera-v7';
 const DATEIEN = ['./', 'index.html', 'doppelkamera.html', 'manifest.json', 'icon-192.png', 'icon-512.png', 'apple-touch-icon.png'];
 
 self.addEventListener('install', e => {

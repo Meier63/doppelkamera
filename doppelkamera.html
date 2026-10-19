@@ -1872,22 +1872,27 @@ function renderDaten() {
 // Standard-Maße einer Steeldart-Scheibe (Radius in mm)
 const BRETT = { bull: 6.35, bullAussen: 15.9, triInnen: 99, triAussen: 107, dopInnen: 162, dopAussen: 170, rand: 225 };
 const SEKTOREN = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];   // im Uhrzeigersinn ab oben
-// Einrichtpunkte: Außenkante des Doppelrings an den Grenzen 20|1, 6|10, 3|19, 11|14
-// (w = Winkel in Grad gegen den Uhrzeigersinn ab „3 Uhr“; Scheibenkoordinaten in mm, y nach oben)
-const EICHPUNKTE = [{ name: '20 | 1', w: 81 }, { name: '6 | 10', w: -9 }, { name: '3 | 19', w: -99 }, { name: '11 | 14', w: 171 }]
-  .map(p => ({ ...p, mm: [BRETT.dopAussen * Math.cos(p.w * Math.PI / 180), BRETT.dopAussen * Math.sin(p.w * Math.PI / 180)] }));
+// Einrichtpunkte: Außenkante des Doppelrings an 8 Sektorgrenzen, im Uhrzeigersinn ab 20|1
+// (w = Winkel in Grad gegen den Uhrzeigersinn ab „3 Uhr“; Scheibenkoordinaten in mm, y nach oben).
+// Die früheren 4 Punkte (20|1, 6|10, 3|19, 11|14) sind Nr. 0, 2, 4, 6 – alte Einrichtungen bleiben gültig.
+const EICHPUNKTE = [['20 | 1', 81], ['18 | 4', 45], ['6 | 10', -9], ['15 | 2', -45], ['3 | 19', -99], ['7 | 16', -135], ['11 | 14', 171], ['9 | 12', 135]]
+  .map(([name, w]) => ({ name, w, mm: [BRETT.dopAussen * Math.cos(w * Math.PI / 180), BRETT.dopAussen * Math.sin(w * Math.PI / 180)] }));
 const RICHTUNGEN = { auto: 'automatisch', oben: 'nach oben', unten: 'nach unten', links: 'nach links', rechts: 'nach rechts' };
 
 let kamEinst = Object.assign({
   geraet: null, geraetName: '',        // gewählte Kamera
-  punkte: null, seitenverh: null,      // 4 Einrichtpunkte im Bild (0–1) und Bildformat beim Einrichten
+  punkte: null, seitenverh: null,      // 8 Einrichtpunkte im Bild (0–1, null = übersprungen) und Bildformat beim Einrichten
   empf: 6, ruhe: 400,                  // Empfindlichkeit 1–10, Ruhezeit in ms
   richtung: 'auto', gelernt: null,     // wohin die Flights im Bild zeigen (gelernt: Mittel aus eindeutigen Darts)
-  zoom: 1, hwZoom: null,
-  ton: 'zweiton', lautst: 0.6,
-  auffuellen: true, autoWeiter: true, tonZiehen: true,   // nach dem Ziehen: automatisch zum nächsten Feld, kurzer Ton                    // beim Herausziehen fehlende Darts des Durchgangs als Daneben zählen         // Ton bei erkanntem Dart (siehe TOENE) und Lautstärke 0–1               // digitaler Zoom (Ausschnitt um die Scheibe, 1–4×) und Zoom der Kamera selbst
+  zoom: 1, hwZoom: null,               // digitaler Zoom (Ausschnitt um die Scheibe, 1–4×) und Zoom der Kamera selbst
+  ton: 'zweiton', lautst: 0.6,         // Ton bei erkanntem Dart (siehe TOENE) und Lautstärke 0–1
+  auffuellen: true,                    // beim Herausziehen fehlende Darts des Durchgangs als Daneben zählen
+  autoWeiter: true, tonZiehen: true,   // nach dem Ziehen: automatisch zum nächsten Feld, kurzer Ton
   netz: true, diff: false, knapp: 2    // Netz/Unterschied im Bild zeigen; „knapp“ ab so vielen mm am Feldrand
 }, lsLesen(LS.kamera) || {});
+// frühere Einrichtung mit 4 Punkten auf die 8 Plätze verteilen
+const punkteAuf8 = P => (Array.isArray(P) && P.length === 4 ? [P[0], null, P[1], null, P[2], null, P[3], null] : P);
+kamEinst.punkte = punkteAuf8(kamEinst.punkte);
 const kamSpeichern = () => lsSchreiben(LS.kamera, kamEinst);
 const schwelle = () => Math.round(48 - 3.6 * kamEinst.empf);   // Helligkeits-Unterschied (0–255), ab dem ein Bildpunkt „neu“ ist
 const minMm2 = () => Math.round(160 - 14 * kamEinst.empf);       // kleinster Dart im Bild, in mm² Scheibenfläche
@@ -1910,41 +1915,139 @@ function loese(A, b) {   // lineares Gleichungssystem (Gauß mit Pivotsuche)
   return M.map((r, i) => r[n] / r[i]);
 }
 
-// Homographie aus 4 Punktpaaren: bildet von[i] auf nach[i] ab
+// Homographie aus 4 oder mehr Punktpaaren (bei mehr als 4: Ausgleich nach kleinsten Quadraten): von[i] → nach[i]
 function homographie(von, nach) {
-  const A = [], b = [];
-  for (let i = 0; i < 4; i++) {
-    const [x, y] = von[i], [u, v] = nach[i];
-    A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); b.push(u);
-    A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); b.push(v);
+  const n = von.length;
+  if (n < 4) return null;
+  // Punkte normalisieren (Schwerpunkt 0, mittlerer Abstand √2) – macht die Rechnung stabil
+  const norm = P => {
+    const mx = P.reduce((a, p) => a + p[0], 0) / n, my = P.reduce((a, p) => a + p[1], 0) / n;
+    const d = P.reduce((a, p) => a + Math.hypot(p[0] - mx, p[1] - my), 0) / n || 1, k = Math.SQRT2 / d;
+    return { k, mx, my, P: P.map(p => [(p[0] - mx) * k, (p[1] - my) * k]) };
+  };
+  const a = norm(von), b = norm(nach), A = [], B = [];
+  for (let i = 0; i < n; i++) {
+    const [x, y] = a.P[i], [u, v] = b.P[i];
+    A.push([x, y, 1, 0, 0, 0, -u * x, -u * y]); B.push(u);
+    A.push([0, 0, 0, x, y, 1, -v * x, -v * y]); B.push(v);
   }
-  const h = loese(A, b);
-  return h && h.every(Number.isFinite) ? [...h, 1] : null;
+  let h;
+  if (n === 4) h = loese(A, B);
+  else {
+    const AtA = Array.from({ length: 8 }, (_, i) => Array.from({ length: 8 }, (_, j) => A.reduce((s, z) => s + z[i] * z[j], 0)));
+    h = loese(AtA, Array.from({ length: 8 }, (_, i) => A.reduce((s, z, k) => s + z[i] * B[k], 0)));
+  }
+  if (!h || !h.every(Number.isFinite)) return null;
+  // zurückrechnen: H = Tnach⁻¹ · Hn · Tvon
+  const Hn = [...h, 1], Tv = [a.k, 0, -a.k * a.mx, 0, a.k, -a.k * a.my, 0, 0, 1], Ti = [1 / b.k, 0, b.mx, 0, 1 / b.k, b.my, 0, 0, 1];
+  const mal = (X, Y) => [0, 1, 2].flatMap(i => [0, 1, 2].map(j => X[i * 3] * Y[j] + X[i * 3 + 1] * Y[3 + j] + X[i * 3 + 2] * Y[6 + j]));
+  const H = mal(Ti, mal(Hn, Tv));
+  return H.map(v => v / H[8]);
 }
 function abb(H, x, y) {
   const w = H[6] * x + H[7] * y + H[8];
   return [(H[0] * x + H[1] * y + H[2]) / w, (H[3] * x + H[4] * y + H[5]) / w, w];
 }
 
-let geo = null;   // { zuBrett: Bild (0–1) → mm, zuBild: mm → Bild, netz: Linien fürs Overlay }
+let geo = null;   // { zuBrett: Bild (0–1) → mm, zuBild: mm → Bild, korr, lage, guete, netz, … }
+
+// Fourier-Reihe in θ: c0 + a1·cos θ + b1·sin θ (+ a2·cos 2θ + b2·sin 2θ)
+const reihe = (c, t) => c.reduce((s, k, i) => s + k * (i === 0 ? 1 : i % 2 ? Math.cos(Math.ceil(i / 2) * t) : Math.sin(Math.ceil(i / 2) * t)), 0);
+function reiheAnpassen(ts, werte, terme) {
+  const A = ts.map(t => Array.from({ length: terme }, (_, i) => reihe(Array.from({ length: terme }, (_, j) => +(j === i)), t)));
+  const AtA = Array.from({ length: terme }, (_, i) => Array.from({ length: terme }, (_, j) => A.reduce((s, z) => s + z[i] * z[j], 0)));
+  return loese(AtA, Array.from({ length: terme }, (_, i) => A.reduce((s, z, k) => s + z[i] * werte[k], 0)));
+}
+
+// Bildpunkt (0–1) → Scheibe (mm), mit Feinkorrektur aus den Einrichtpunkten (z. B. Linsenverzerrung)
+function zuScheibe(nx, ny) {
+  const [x, y] = abb(geo.zuBrett, nx, ny), k = geo.korr;
+  if (!k) return [x, y];
+  const r = Math.hypot(x, y), t = Math.atan2(y, x), f = Math.min(1, r / BRETT.dopAussen);
+  const r2 = r + f * Math.max(-8, Math.min(8, reihe(k.dr, t))), t2 = t + f * Math.max(-0.05, Math.min(0.05, reihe(k.dt, t)));
+  return [r2 * Math.cos(t2), r2 * Math.sin(t2)];
+}
+// Scheibe (mm) → Bildpunkt (0–1), Gegenstück zu zuScheibe (für Netz und Zielfeld)
+function zuKamerabild(x, y) {
+  const k = geo.korr;
+  if (k) {
+    const r = Math.hypot(x, y), t = Math.atan2(y, x), f = Math.min(1, r / BRETT.dopAussen);
+    const r0 = r - f * Math.max(-8, Math.min(8, reihe(k.dr, t))), t0 = t - f * Math.max(-0.05, Math.min(0.05, reihe(k.dt, t)));
+    x = r0 * Math.cos(t0); y = r0 * Math.sin(t0);
+  }
+  return abb(geo.zuBild, x, y);
+}
+
+// Lage der Kamera aus der Einrichtung schätzen (Lochkamera, Bildmitte als Hauptpunkt). Damit lässt sich ausrechnen,
+// in welche Richtung ein Dart, der senkrecht aus der Scheibe ragt, im Bild zeigt – so findet man die Spitze.
+function kameraLage(zuBild, verh) {
+  // mm → Bild in quadratischen Einheiten (Bildbreite 1), Ursprung in der Bildmitte
+  const h = zuBild, cy = 0.5 / verh;
+  const M = [h[0] - 0.5 * h[6], h[1] - 0.5 * h[7], h[2] - 0.5 * h[8], h[3] / verh - cy * h[6], h[4] / verh - cy * h[7], h[5] / verh - cy * h[8], h[6], h[7], h[8]];
+  const [a, b, c, d, e, g, p, q, w] = M;   // Spalten: h1 = (a, d, p), h2 = (b, e, q), h3 = (c, g, w)
+  const schaetz = [];
+  if (Math.abs(p * q) > 1e-12) schaetz.push(-(a * b + d * e) / (p * q));
+  if (Math.abs(q * q - p * p) > 1e-12) schaetz.push(((a * a + d * d) - (b * b + e * e)) / (q * q - p * p));
+  const gut = schaetz.filter(v => v > 0.05 && v < 25);
+  if (!gut.length) return null;   // fast frontal: Lage nicht bestimmbar
+  const f = Math.sqrt(gut.reduce((s, v) => s + v, 0) / gut.length);
+  const k1 = [a / f, d / f, p], k2 = [b / f, e / f, q], k3 = [c / f, g / f, w];
+  let l = 2 / (Math.hypot(...k1) + Math.hypot(...k2));
+  if (k3[2] * l < 0) l = -l;   // Scheibe liegt vor der Kamera
+  const r1 = k1.map(v => v * l), r2 = k2.map(v => v * l), t = k3.map(v => v * l);
+  const r3 = [r1[1] * r2[2] - r1[2] * r2[1], r1[2] * r2[0] - r1[0] * r2[2], r1[0] * r2[1] - r1[1] * r2[0]];
+  const vorne = -(r3[0] * t[0] + r3[1] * t[1] + r3[2] * t[2]) > 0 ? 1 : -1;   // Seite der Scheibe, auf der die Kamera steht
+  return { f, r1, r2, r3, t, vorne, verh };
+}
+// Bildrichtung (Anteile 0–1) vom Einstichpunkt (mm) zum Ende eines 100 mm langen, senkrecht abstehenden Darts
+function dartRichtung(x, y) {
+  const L = geo && geo.lage;
+  if (!L) return null;
+  const bild = z => {
+    const X = [0, 1, 2].map(i => x * L.r1[i] + y * L.r2[i] + z * L.vorne * L.r3[i] + L.t[i]);
+    return [0.5 + L.f * X[0] / X[2], (0.5 / L.verh + L.f * X[1] / X[2]) * L.verh];
+  };
+  const p0 = bild(0), p1 = bild(100);
+  return [p1[0] - p0[0], p1[1] - p0[1]];
+}
+
 function geoBerechnen() {
   geo = null;
   K.maske = null;
   const P = kamEinst.punkte;
   if (!P) return;
-  const mm = EICHPUNKTE.map(p => p.mm);
-  const zuBrett = homographie(P, mm), zuBild = homographie(mm, P);
+  const idx = P.map((p, i) => (p ? i : -1)).filter(i => i >= 0);
+  if (idx.length < 4) return;
+  const bild = idx.map(i => P[i]), mm = idx.map(i => EICHPUNKTE[i].mm);
+  const zuBrett = homographie(bild, mm), zuBild = homographie(mm, bild);
   if (!zuBrett || !zuBild) return;
-  const kreis = (r, n = 120) => Array.from({ length: n + 1 }, (_, i) => abb(zuBild, r * Math.cos(i * 2 * Math.PI / n), r * Math.sin(i * 2 * Math.PI / n)));
+  // Abweichung der Einrichtpunkte (Tippfehler, Linsenverzerrung) und Feinkorrektur entlang des Doppelrings
+  const rest = idx.map((i, k) => {
+    const [x, y] = abb(zuBrett, ...bild[k]), t = Math.atan2(y, x), tm = EICHPUNKTE[i].w * Math.PI / 180;
+    const dt = Math.atan2(Math.sin(tm - t), Math.cos(tm - t)), dr = BRETT.dopAussen - Math.hypot(x, y);
+    return { i, t, dr, dt, mm: Math.hypot(dr, dt * BRETT.dopAussen) };
+  });
+  const terme = idx.length >= 7 ? 5 : idx.length >= 5 ? 3 : 0;
+  let korr = null;
+  if (terme) {
+    const dr = reiheAnpassen(rest.map(z => z.t), rest.map(z => z.dr), terme), dt = reiheAnpassen(rest.map(z => z.t), rest.map(z => z.dt), terme);
+    if (dr && dt) korr = { dr, dt };
+  }
+  const schlecht = rest.reduce((a, z) => (z.mm > a.mm ? z : a), rest[0]);
+  geo = { zuBrett, zuBild, korr, punkte: idx.length,
+    guete: { mittel: rest.reduce((s, z) => s + z.mm, 0) / rest.length, max: schlecht.mm, schlecht: schlecht.i } };
+  const kreis = (r, n = 120) => Array.from({ length: n + 1 }, (_, i) => zuKamerabild(r * Math.cos(i * 2 * Math.PI / n), r * Math.sin(i * 2 * Math.PI / n)));
   const netz = [BRETT.bull, BRETT.bullAussen, BRETT.triInnen, BRETT.triAussen, BRETT.dopInnen, BRETT.dopAussen].map(r => kreis(r));
   for (let i = 0; i < 20; i++) {
-    const w = (90 - i * 18 + 9) * Math.PI / 180;
-    netz.push([abb(zuBild, BRETT.bullAussen * Math.cos(w), BRETT.bullAussen * Math.sin(w)), abb(zuBild, BRETT.dopAussen * Math.cos(w), BRETT.dopAussen * Math.sin(w))]);
+    const w = (90 - i * 18 + 9) * Math.PI / 180, l = [];
+    for (let r = BRETT.bullAussen; r <= BRETT.dopAussen + 0.1; r += 154.1 / 8) l.push(zuKamerabild(r * Math.cos(w), r * Math.sin(w)));
+    netz.push(l);
   }
   // Rahmen um die Scheibe samt herausragender Darts (270 mm) – für den Zoom
   const rand = kreis(270, 72), xs = rand.map(p => p[0]), ys = rand.map(p => p[1]);
   const x0 = Math.max(0, Math.min(...xs)), x1 = Math.min(1, Math.max(...xs)), y0 = Math.max(0, Math.min(...ys)), y1 = Math.min(1, Math.max(...ys));
-  geo = { zuBrett, zuBild, netz, mitte: abb(zuBild, 0, 0).slice(0, 2), zentrum: [(x0 + x1) / 2, (y0 + y1) / 2], groesse: [x1 - x0, y1 - y0] };
+  Object.assign(geo, { netz, mitte: abb(zuBild, 0, 0).slice(0, 2), zentrum: [(x0 + x1) / 2, (y0 + y1) / 2], groesse: [x1 - x0, y1 - y0] });
+  geo.lage = kameraLage(zuBild, kamEinst.seitenverh || (K.video && K.video.videoHeight ? K.video.videoWidth / K.video.videoHeight : 16 / 9));
 }
 
 // Ausschnitt des Kamerabilds (digitaler Zoom) in Anteilen des ganzen Bilds; Mitte = Scheibe, sonst Bildmitte.
@@ -2012,12 +2115,12 @@ function zielUmriss(ziel) {
   if (!geo) return null;
   const pts = [];
   if (ziel === 25) {
-    for (let i = 0; i <= 40; i++) pts.push(abb(geo.zuBild, BRETT.bull * Math.cos(i * Math.PI / 20), BRETT.bull * Math.sin(i * Math.PI / 20)));
+    for (let i = 0; i <= 40; i++) pts.push(zuKamerabild(BRETT.bull * Math.cos(i * Math.PI / 20), BRETT.bull * Math.sin(i * Math.PI / 20)));
     return pts;
   }
   const mitte = 90 - SEKTOREN.indexOf(ziel) * 18;
-  for (let i = 0; i <= 12; i++) { const w = (mitte - 9 + i * 1.5) * Math.PI / 180; pts.push(abb(geo.zuBild, BRETT.dopAussen * Math.cos(w), BRETT.dopAussen * Math.sin(w))); }
-  for (let i = 12; i >= 0; i--) { const w = (mitte - 9 + i * 1.5) * Math.PI / 180; pts.push(abb(geo.zuBild, BRETT.dopInnen * Math.cos(w), BRETT.dopInnen * Math.sin(w))); }
+  for (let i = 0; i <= 12; i++) { const w = (mitte - 9 + i * 1.5) * Math.PI / 180; pts.push(zuKamerabild(BRETT.dopAussen * Math.cos(w), BRETT.dopAussen * Math.sin(w))); }
+  for (let i = 12; i >= 0; i--) { const w = (mitte - 9 + i * 1.5) * Math.PI / 180; pts.push(zuKamerabild(BRETT.dopInnen * Math.cos(w), BRETT.dopInnen * Math.sin(w))); }
   return pts;
 }
 
@@ -2100,14 +2203,20 @@ function bildLesen(gross) {
 // Bildpunkte, die sich gegenüber der Referenz geändert haben (Helligkeitsänderung der ganzen Szene wird herausgerechnet)
 function unterschied(A, B, maske, thr) {
   const n = A.y.length;
-  let s = 0, m = 0;
-  for (let i = 0; i < n; i += 7) if (maske[i]) { s += A.y[i] - B.y[i]; m++; }
-  const off = m ? s / m : 0;
+  // Belichtung/Weißabgleich der Kamera ändern Helligkeit und Kontrast der ganzen Szene: A ≈ g·B + off ausgleichen
+  let sa = 0, sb = 0, sab = 0, sbb = 0, m = 0;
+  for (let i = 0; i < n; i += 7) if (maske[i]) { const a = A.y[i], b = B.y[i]; sa += a; sb += b; sab += a * b; sbb += b * b; m++; }
+  let g = 1, off = 0;
+  if (m > 10) {
+    const ma = sa / m, mb = sb / m, vb = sbb / m - mb * mb;
+    g = vb > 25 ? Math.min(1.3, Math.max(0.77, (sab / m - ma * mb) / vb)) : 1;
+    off = ma - g * mb;
+  }
   const out = new Uint8Array(n);
   let anz = 0;
   for (let i = 0; i < n; i++) {
     if (!maske[i]) continue;
-    if (Math.abs(A.y[i] - B.y[i] - off) > thr || (A.c && Math.abs(A.c[i] - B.c[i]) > thr * 1.3)) { out[i] = 1; anz++; }
+    if (Math.abs(A.y[i] - g * B.y[i] - off) > thr || (A.c && Math.abs(A.c[i] - g * B.c[i]) > thr * 1.3)) { out[i] = 1; anz++; }
   }
   return { m: out, anz };
 }
@@ -2160,33 +2269,57 @@ function rahmen(px, W) {
 
 // Ein Dart zerfällt oft in Teile (z. B. schwarzer Schaft auf schwarzem Feld ist unsichtbar):
 // Teile in der Nähe des größten Bereichs (bis etwa eine Dartlänge) gehören zum selben Dart.
+// Ist die Dartrichtung bekannt, nur Teile, die in dieser Richtung (±35°) vor oder hinter dem größten Teil liegen –
+// Reste anderer Darts daneben (z. B. ein nachschwingender Flight) bleiben außen vor.
 function dartTeile(liste, minF) {
   if (!liste.length) return null;
   const r = rahmen(liste[0], K.W), nah = 110 * K.pxProMm, klein = Math.max(6, minF / 8);
+  const schwer = p => { let x = 0, y = 0; for (const i of p) { x += i % K.W; y += (i / K.W) | 0; } return [x / p.length, y / p.length]; };
+  const erw = erwarteteRichtung(liste[0]), el = erw ? Math.hypot(erw[0], erw[1]) : 0, c0 = schwer(liste[0]);
   let px = liste[0];
   for (const t of liste.slice(1)) {
     if (t.length < klein) break;
     const q = rahmen(t, K.W);
     const dx = Math.max(0, q.x0 - r.x1, r.x0 - q.x1), dy = Math.max(0, q.y0 - r.y1, r.y0 - q.y1);
-    if (Math.hypot(dx, dy) < nah) px = px.concat(t);
+    if (Math.hypot(dx, dy) >= nah) continue;
+    if (el && Math.hypot(dx, dy) > 3) {
+      const c = schwer(t), d = [c[0] - c0[0], c[1] - c0[1]], dl = Math.hypot(d[0], d[1]) || 1;
+      if (Math.abs(d[0] * erw[0] + d[1] * erw[1]) / (dl * el) < 0.82) continue;
+    }
+    px = px.concat(t);
   }
   return px;
+}
+
+// Sieht ein Bildpunkt aus wie Schatten? Die Scheibe ist dort nur dunkler geworden, die Farbe gleich geblieben
+// (Creme → dunkles Creme, Rot → dunkles Rot). Die Stahlspitze oder ein Barrel haben dagegen eine eigene Farbe.
+function schattenArtig(i, F, R) {
+  const ry = R.y[i];
+  if (ry < 35) return false;   // auf Schwarz sieht man keinen Schatten
+  const q = F.y[i] / ry;
+  return q > 0.3 && q < 0.92 && Math.abs(F.c[i] - q * R.c[i]) < 8 + 0.08 * Math.abs(R.c[i]);
 }
 
 function richtungVektor() {
   return { oben: [0, -1], unten: [0, 1], links: [-1, 0], rechts: [1, 0] }[kamEinst.richtung] || null;
 }
 
-// Spitze eines Dart-Bereichs schätzen: Längsachse bestimmen; die Spitze ist das schmale Ende (der Flight ist breit).
-// Ist das nicht eindeutig, entscheidet die eingestellte bzw. gelernte Richtung der Flights im Bild.
-function spitzeSchaetzen(px, W) {
+// Spitze eines Dart-Bereichs schätzen: Längsachse bestimmen, dann das richtige Ende wählen.
+// Reihenfolge: eingestellte Richtung der Flights → aus der Kameralage berechnete Richtung (erw, Bildpunkte im
+// Ausschnitt) → schmales Ende (der Flight ist breit) → gelernte Richtung.
+function spitzeSchaetzen(px, W, erw) {
   const n = px.length;
   let mx = 0, my = 0;
   for (const i of px) { mx += i % W; my += (i / W) | 0; }
   mx /= n; my /= n;
   let sxx = 0, syy = 0, sxy = 0;
   for (const i of px) { const dx = i % W - mx, dy = ((i / W) | 0) - my; sxx += dx * dx; syy += dy * dy; sxy += dx * dy; }
-  const th = 0.5 * Math.atan2(2 * sxy, sxx - syy), ux = Math.cos(th), uy = Math.sin(th);
+  const th = 0.5 * Math.atan2(2 * sxy, sxx - syy);
+  let ux = Math.cos(th), uy = Math.sin(th);
+  const el = erw ? Math.hypot(erw[0], erw[1]) : 0, e = el ? [erw[0] / el, erw[1] / el] : null;
+  if (e && !richtungVektor()) return spitzeAufLinie(px, W, mx, my, e);
+  // weicht die Längsachse stark von der berechneten Dartrichtung ab (z. B. wegen des Schattens), die berechnete nehmen
+  if (e && Math.abs(ux * e[0] + uy * e[1]) < 0.9) { ux = e[0]; uy = e[1]; }
   const S = new Float32Array(n), T = new Float32Array(n);
   let smin = Infinity, smax = -Infinity;
   px.forEach((i, k) => {
@@ -2203,6 +2336,7 @@ function spitzeSchaetzen(px, W) {
   const fest = richtungVektor(), g = kamEinst.gelernt;
   let spitzeA;
   if (fest) spitzeA = ux * fest[0] + uy * fest[1] > 0;    // Flights zeigen nach +Achse → Spitze bei A
+  else if (e) spitzeA = ux * e[0] + uy * e[1] > 0;
   else if (eindeutig || !g) spitzeA = verh < 1;
   else spitzeA = ux * g[0] + uy * g[1] > 0;
   let ss = 0, tt = 0, c = 0;
@@ -2210,16 +2344,48 @@ function spitzeSchaetzen(px, W) {
   ss = ss / c + (spitzeA ? 1 : -1);                         // die Unschärfe hat den Bereich etwas vergrößert
   tt /= c;
   const flug = spitzeA ? [ux, uy] : [-ux, -uy];
-  if (!fest && eindeutig && L > 25) {                       // Richtung lernen (für spätere, uneindeutige Darts)
+  if (!fest && !e && eindeutig && L > 25) {                 // Richtung lernen (für spätere, uneindeutige Darts)
     const a = g ? [g[0] * 0.8 + flug[0] * 0.2, g[1] * 0.8 + flug[1] * 0.2] : flug, l = Math.hypot(a[0], a[1]) || 1;
     kamEinst.gelernt = [a[0] / l, a[1] / l];
     kamSpeichern();
   }
-  return { x: mx + ss * ux - tt * uy, y: my + ss * uy + tt * ux, laenge: L, sicher: eindeutig || !!fest, flug };
+  return { x: mx + ss * ux - tt * uy, y: my + ss * uy + tt * ux, laenge: L, sicher: eindeutig || !!fest || !!e, flug };
+}
+
+// Spitze mit bekannter Dartrichtung e (Bild, vom Einstich zum Flight; ein Dart steckt aber oft 10–20° schräg):
+// Unter allen Richtungen bis ±37° um e die Linie suchen, auf der die meisten Bildpunkte liegen – sie führt durch
+// Flight, Schaft und Barrel; der Schatten auf der Scheibe liegt daneben. Die Spitze ist ihr Ende entgegen e.
+function spitzeAufLinie(px, W, mx, my, e) {
+  const n = px.length, X = new Float32Array(n), Y = new Float32Array(n);
+  px.forEach((i, k) => { X[k] = i % W - mx; Y[k] = ((i / W) | 0) - my; });
+  const band = Math.max(3, 5 * K.pxProMm), halb = band / 2, w0 = Math.atan2(e[1], e[0]);
+  let best = { anz: -1 };
+  for (let dw = -0.65; dw <= 0.651; dw += 0.03) {
+    const u = [Math.cos(w0 + dw), Math.sin(w0 + dw)], v = [-u[1], u[0]];
+    const faecher = new Map();
+    for (let k = 0; k < n; k++) { const f = Math.floor((X[k] * v[0] + Y[k] * v[1]) / halb); faecher.set(f, (faecher.get(f) || 0) + 1); }
+    for (const [f, a] of faecher) {
+      const anz = a + (faecher.get(f + 1) || 0);
+      if (anz > best.anz) best = { anz, u, t0: (f + 1) * halb };
+    }
+  }
+  const u = best.u, v = [-u[1], u[0]];
+  let smin = Infinity, smax = -Infinity;
+  const S = new Float32Array(n), T = new Float32Array(n);
+  for (let k = 0; k < n; k++) {
+    S[k] = X[k] * u[0] + Y[k] * u[1]; T[k] = X[k] * v[0] + Y[k] * v[1] - best.t0;
+    if (Math.abs(T[k]) < band) { smin = Math.min(smin, S[k]); smax = Math.max(smax, S[k]); }
+  }
+  let ss = 0, tt = 0, c = 0;
+  for (let k = 0; k < n; k++) if (Math.abs(T[k]) < band && S[k] <= smin + 2) { ss += S[k]; tt += T[k]; c++; }
+  if (!c) return { x: mx, y: my, laenge: 0, sicher: false, flug: e };
+  ss = ss / c + 1;   // die Unschärfe hat den Bereich etwas vergrößert
+  tt = tt / c + best.t0;
+  return { x: mx + ss * u[0] + tt * v[0], y: my + ss * u[1] + tt * v[1], laenge: smax - smin, sicher: true, flug: u };
 }
 
 // Die dünne Stahlspitze liegt oft unter dem Schwellwert: vom schmalen Ende aus in Verlängerung der Längsachse
-// weitergehen, solange sich das Bild dort noch schwach (ab 45 % des Schwellwerts) vom Referenzbild unterscheidet.
+// weitergehen, solange sich das Bild dort noch schwach (ab 32 % des Schwellwerts) vom Referenzbild unterscheidet.
 function spitzeVerfolgen(sp, F, R, thr) {
   const [fx, fy] = sp.flug, W = K.W, H = K.H, max = Math.max(4, 25 * K.pxProMm);
   let x = sp.x, y = sp.y, fehl = 0;
@@ -2230,9 +2396,10 @@ function spitzeVerfolgen(sp, F, R, thr) {
       const xx = Math.round(px - fy * q), yy = Math.round(py + fx * q);
       if (xx < 0 || yy < 0 || xx >= W || yy >= H) continue;
       const i = yy * W + xx;
+      if (schattenArtig(i, F, R)) continue;
       best = Math.max(best, Math.abs(F.y[i] - R.y[i]), Math.abs(F.c[i] - R.c[i]) / 1.3);
     }
-    if (best > thr * 0.45) { x = px; y = py; fehl = 0; } else if (++fehl >= 2) break;
+    if (best > thr * 0.32) { x = px; y = py; fehl = 0; } else if (++fehl >= 3) break;
   }
   return { ...sp, x, y };
 }
@@ -2273,7 +2440,11 @@ function maskenBerechnen() {
   K.maske = mk(K.W, K.H);
   K.maskeK = mk(K.w, K.h);
   K.maskeAnz = K.maskeK.reduce((a, b) => a + b, 0) || 1;
-  K.pxProMm = geo ? Math.sqrt(viereckFlaeche(kamEinst.punkte.map(([x, y]) => [(x - K.a.x) / K.a.w * K.W, (y - K.a.y) / K.a.h * K.H])) / (2 * BRETT.dopAussen ** 2)) : 1;
+  if (geo) {
+    const idx = kamEinst.punkte.map((p, i) => (p ? i : -1)).filter(i => i >= 0);
+    K.pxProMm = Math.sqrt(viereckFlaeche(idx.map(i => [(kamEinst.punkte[i][0] - K.a.x) / K.a.w * K.W, (kamEinst.punkte[i][1] - K.a.y) / K.a.h * K.H]))
+      / viereckFlaeche(idx.map(i => EICHPUNKTE[i].mm)));
+  } else K.pxProMm = 1;
 }
 
 function referenzNehmen(F) {
@@ -2333,6 +2504,7 @@ function analysieren(jetzt) {
     const off = z ? sum / z : 0;   // Belichtungsautomatik der Kamera ist keine Bewegung
     for (let i = 0; i < a.length; i++) if (m[i] && Math.abs(a[i] - b[i] - off) > 14) n++;
     if (n > Math.max(4, K.maskeAnz * 0.0015)) {
+      if (jetzt - K.stillSeit > 250) K.bewegungAb = jetzt;   // neue Bewegung beginnt (z. B. Einschlag eines Darts)
       K.stillSeit = jetzt;
       K.bewegt = true;
       if (n > K.maskeAnz * 0.04) K.grossMs += jetzt - K.letzteZeit;   // viel Bewegung (Hand, Person)
@@ -2363,7 +2535,7 @@ function analysieren(jetzt) {
 }
 
 function auswerten(gross, klein) {
-  const F = bildLesen(true), thr = schwelle(), s2 = K.pxProMm ** 2;
+  const F = bildLesen(true), thr = schwelle(), s2 = K.pxProMm ** 2, refAlt = K.ref;
   const minF = Math.max(8, minMm2() * s2), maxF = 20000 * s2;
   const neueRef = () => { K.ref = F; K.refKlein = klein; };
   const warten = kameraWartetAufZiehen();
@@ -2393,39 +2565,124 @@ function auswerten(gross, klein) {
     kameraEreignis('gezogen');
     return;
   }
-  if (gross || u.anz > 2 * maxF) {
-    // Hand/Person im Bild oder Licht/Kamera verändert, Darts stecken noch: nur neues Referenzbild, nichts zählen
-    protokoll(gross ? 'Bewegung im Bild (Hand/Person) – nichts gezählt' : 'Bild stark verändert – nichts gezählt');
+  if (u.anz > 2 * maxF) {
+    // Licht oder Kamera verändert, Darts stecken noch: nur neues Referenzbild, nichts zählen
+    protokoll('Bild stark verändert – nichts gezählt');
     neueRef();
     return;
   }
   if (warten) { protokoll('Änderung nach 3 Darts – nichts gezählt (erst herausziehen)'); neueRef(); return; }
-  const b = dartTeile(bereiche(u.m, K.W, K.H), minF);
-  if (!b || b.length < minF) { mischen(K.ref, F, 0.3); statusAktualisieren(); return; }
+  // Nach einer Handbewegung (Darts nicht gezogen) trotzdem nach neuen Darts suchen: Ein Dart, der kurz vor der
+  // Hand geworfen wurde, ist sonst verloren. Die Hand selbst ist jetzt weg (ausgewertet wird erst bei ruhigem Bild).
+  let b = dartTeile(bereiche(u.m, K.W, K.H), minF);
+  if (!b || b.length < minF) {
+    if (gross) { protokoll('Bewegung im Bild (Hand/Person) – nichts gezählt'); neueRef(); return; }
+    if (b && b.length > minF / 3) protokoll(`Kleine Veränderung (${Math.round(b.length / s2)} mm²) – kein Dart`);
+    mischen(K.ref, F, 0.3); statusAktualisieren(); return;
+  }
+  if (gross) protokoll('Bewegung im Bild (Hand/Person) – prüfe auf neuen Dart');
+  // Schatten des Darts auf der Scheibe weglassen – er kann im Bild wie eine Verlängerung der Spitze aussehen
+  const ohneSchatten = b.filter(i => !schattenArtig(i, F, K.ref));
+  if (ohneSchatten.length >= minF / 2) b = ohneSchatten;
   if (b.length > maxF) { protokoll('Große Veränderung – kein Dart gezählt'); neueRef(); return; }
   // Nachschwingen/Verdrehen eines steckenden Darts: Dort, wo vorher Flight oder Schaft war, ist wieder die leere Scheibe
   // zu sehen. Ein neuer Dart – auch dicht daneben – verdeckt nur zusätzlich etwas und legt nichts frei.
-  const frei = uL ? 1 - anteilIn(b, uL.m) : 0;
-  if (K.dartBereiche.length && frei > 0.25) {
-    protokoll(`Steckender Dart hat sich bewegt (Nachschwingen, ${Math.round(frei * 100)} % frei) – nicht gezählt`);
-    neueRef();
-    return;
+  // Freigelegt = sieht jetzt wieder aus wie die leere Scheibe. Liegt das Freigelegte an einem steckenden Dart, hat der
+  // sich bewegt; sonst (z. B. Rest einer Hand im Vergleichsbild) zählen nur die wirklich neuen Bildpunkte.
+  if (uL) {
+    const neu = b.filter(i => uL.m[i]), frei = 1 - neu.length / b.length;
+    if (frei > 0.35 && K.dartBereiche.length) {
+      const umfeld = new Uint8Array(K.W * K.H);
+      for (const d of K.dartBereiche) for (const i of d.px) umfeld[i] = 1;
+      let u2 = umfeld;
+      for (let k = 0; k < Math.max(3, Math.round(8 * K.pxProMm)); k++) u2 = verbreitern(u2, K.W, K.H);
+      const freiPx = b.filter(i => !uL.m[i]);
+      if (anteilIn(freiPx, u2) > 0.5) {
+        // Nachschwingen – aber steckt daneben (außerhalb des Bereichs um die Darts) ein deutlich neuer Dart?
+        const daneben = neu.filter(i => !u2[i]);
+        if (daneben.length < 1.5 * minF) {
+          protokoll(`Steckender Dart hat sich bewegt (Nachschwingen, ${Math.round(frei * 100)} % frei) – nicht gezählt`);
+          neueRef();
+          return;
+        }
+        protokoll('Steckender Dart hat sich bewegt, daneben ein neuer Dart');
+        b = daneben;
+      }
+    }
+    if (frei > 0.1 && b.length > neu.length) {
+      if (neu.length < minF) { protokoll('Nur Freigelegtes, kein neuer Dart – nicht gezählt'); neueRef(); return; }
+      b = neu;
+    }
   }
-  const sp = spitzeVerfolgen(spitzeSchaetzen(b, K.W), F, K.ref, thr);
-  neueRef();
-  K.seitLeer++;
-  // Bereich um die Spitze (15 mm) merken: Ist er wieder wie die leere Scheibe, ist der Dart gezogen
-  const R = Math.max(4, 15 * K.pxProMm), spitze = b.filter(i => Math.hypot(i % K.W - sp.x, ((i / K.W) | 0) - sp.y) < R);
-  K.dartBereiche.push({ px: b, spitze: spitze.length >= 4 ? spitze : b, zeit: jetzt });
+  const sp = spitzeVerfolgen(spitzeSchaetzen(b, K.W, erwarteteRichtung(b)), F, K.ref, thr);
   const nx = K.a.x + (sp.x + 0.5) / K.W * K.a.w, ny = K.a.y + (sp.y + 0.5) / K.H * K.a.h;
   const erg = { nx, ny, sicher: sp.sicher, zeit: jetzt };
   if (geo) {
-    const [bx, by] = abb(geo.zuBrett, nx, ny);
+    const [bx, by] = zuScheibe(nx, ny);
     Object.assign(erg, { bx, by, feld: feldAusPunkt(bx, by) });
   }
+  // Zwei Würfe kurz hintereinander sind unmöglich: Beginnt die Bewegung weniger als 0,8 s nach dem Einschlag des
+  // letzten Darts, ist es derselbe Dart (Nachschwingen, Belichtung der Kamera …)
+  const jetztP = performance.now(), vorige = K.dartBereiche[K.dartBereiche.length - 1];
+  const einschlag = K.bewegungAb > (vorige ? vorige.erkannt : 0) ? K.bewegungAb : jetztP - kamEinst.ruhe;
+  if (vorige && einschlag - vorige.einschlag < 800) {
+    protokoll(`Zu kurz nach dem letzten Dart (${Math.round(einschlag - vorige.einschlag)} ms) – als derselbe Dart gewertet`);
+    neueRef();
+    return;
+  }
+  // Spitze weit außerhalb der Scheibe: kein Dart (z. B. Schatten, Hand am Rand)
+  if (erg.feld && Math.hypot(erg.bx, erg.by) > 260) {
+    protokoll('Veränderung außerhalb der Scheibe – nicht gezählt');
+    neueRef();
+    return;
+  }
+  neueRef();
+  dartMelden(b, sp, erg, einschlag, jetztP, 'Dart erkannt');
+  // Noch ein Dart im selben Bild? (zweiter Wurf, bevor das Bild nach dem ersten ruhig war)
+  if (geo && uL) weitereDarts(u, uL, b, sp, F, refAlt, thr, minF, jetzt, einschlag, jetztP);
+}
+
+function dartMelden(px, sp, erg, einschlag, erkannt, text) {
+  K.seitLeer++;
+  // Bereich um die Spitze (15 mm) merken: Ist er wieder wie die leere Scheibe, ist der Dart gezogen
+  const R = Math.max(4, 15 * K.pxProMm), spitze = px.filter(i => Math.hypot(i % K.W - sp.x, ((i / K.W) | 0) - sp.y) < R);
+  K.dartBereiche.push({ px, spitze: spitze.length >= 4 ? spitze : px, zeit: erg.zeit, einschlag, erkannt });
   K.letzte = erg;
-  protokoll(`Dart erkannt: ${erg.feld ? erg.feld.name : '(nicht eingerichtet)'}`);
+  protokoll(`${text}: ${erg.feld ? erg.feld.name : '(nicht eingerichtet)'}`);
   kameraEreignis('dart', erg);
+}
+
+// Weitere, deutlich getrennte Darts in derselben Änderung suchen. Streng, damit Schatten oder Reste nicht mitzählen:
+// neu (nicht nur freigelegt), kein Schatten, groß, länglich, eigene Spitze mindestens 15 mm von der ersten entfernt.
+function weitereDarts(u, uL, b, sp1, F, R, thr, minF, jetzt, einschlag, erkannt) {
+  let weg = new Uint8Array(K.W * K.H);
+  for (const i of b) weg[i] = 1;
+  for (let k = 0; k < Math.max(3, Math.round(6 * K.pxProMm)); k++) weg = verbreitern(weg, K.W, K.H);
+  const rest = new Uint8Array(K.W * K.H);
+  for (let i = 0; i < rest.length; i++) if (u.m[i] && !weg[i] && uL.m[i] && !schattenArtig(i, F, R)) rest[i] = 1;
+  let gefunden = 0;
+  for (const t of bereiche(rest, K.W, K.H)) {
+    if (t.length < 1.5 * minF || gefunden >= 2 || kameraWartetAufZiehen()) break;
+    const e = erwarteteRichtung(t);
+    if (!e) break;
+    const sp = spitzeVerfolgen(spitzeSchaetzen(t, K.W, e), F, R, thr);
+    if (sp.laenge < 30 * K.pxProMm || Math.hypot(sp.x - sp1.x, sp.y - sp1.y) < 15 * K.pxProMm) continue;
+    const nx = K.a.x + (sp.x + 0.5) / K.W * K.a.w, ny = K.a.y + (sp.y + 0.5) / K.H * K.a.h, [bx, by] = zuScheibe(nx, ny);
+    if (Math.hypot(bx, by) > 260) continue;
+    gefunden++;
+    dartMelden(t, sp, { nx, ny, sicher: sp.sicher, zeit: jetzt, bx, by, feld: feldAusPunkt(bx, by) }, einschlag, erkannt, 'Noch ein Dart im selben Bild');
+  }
+}
+
+// Wohin zeigt ein Dart an dieser Stelle im Bild (Bildpunkte im Ausschnitt)? Aus der geschätzten Kameralage.
+function erwarteteRichtung(px) {
+  if (!geo || !geo.lage || kamEinst.richtung !== 'auto') return null;
+  let mx = 0, my = 0;
+  for (const i of px) { mx += i % K.W; my += (i / K.W) | 0; }
+  mx /= px.length; my /= px.length;
+  const [x, y] = zuScheibe(K.a.x + (mx + 0.5) / K.W * K.a.w, K.a.y + (my + 0.5) / K.H * K.a.h);
+  const d = dartRichtung(x, y);
+  return d ? [d[0] / K.a.w * K.W, d[1] / K.a.h * K.H] : null;
 }
 
 function diffBildSetzen(m) {
@@ -2803,15 +3060,16 @@ function bildZeichnen() {
     P.forEach((p, i) => {
       if (!p) return;
       const x = X(p[0]), y = Y(p[1]), aktivP = K.justieren && i === K.gewaehlt;
+      const ungenau = K.eich < 0 && geo && geo.guete.max > 3 && geo.guete.schlecht === i;
       c.lineWidth = 2 * s;
-      c.strokeStyle = aktivP ? '#f2c230' : '#fff';
+      c.strokeStyle = aktivP ? '#f2c230' : ungenau ? '#ff5a5a' : '#fff';
       c.beginPath(); c.arc(x, y, (aktivP ? 14 : 10) * s, 0, 2 * Math.PI); c.stroke();
       c.beginPath(); c.moveTo(x - 18 * s, y); c.lineTo(x + 18 * s, y); c.moveTo(x, y - 18 * s); c.lineTo(x, y + 18 * s); c.stroke();
       c.font = `${14 * s}px system-ui, sans-serif`;
-      c.fillStyle = aktivP ? '#f2c230' : '#fff';
+      c.fillStyle = aktivP ? '#f2c230' : ungenau ? '#ff5a5a' : '#fff';
       c.fillText(EICHPUNKTE[i].name, x + 16 * s, y - 14 * s);
     });
-    if (K.justieren && kamEinst.punkte) { const [px, py] = kamEinst.punkte[K.gewaehlt]; lupe(px, py, 3, true, 0.42); return; }
+    if (K.justieren && kamEinst.punkte && kamEinst.punkte[K.gewaehlt]) { const [px, py] = kamEinst.punkte[K.gewaehlt]; lupe(px, py, 3, true, 0.42); return; }
     if (K.eich >= 0) return;
   }
   // Trefferbild: der zuletzt erkannte Dart vergrößert
@@ -2844,21 +3102,14 @@ document.addEventListener('pointerdown', e => {
   if (K.eich >= 0) {
     e.preventDefault();
     K.eichNeu[K.eich] = p;
-    K.eich++;
-    if (K.eich === 4) {
-      K.eich = -1;
-      eichungFertig(K.eichNeu.slice());
-      if (!geo) { meldung('Die Punkte passen nicht zusammen – bitte neu einrichten.'); kamEinst.punkte = null; kamSpeichern(); }
-      else { K.justieren = true; K.gewaehlt = 0; meldung('Eingerichtet. Passt das Netz auf die Drähte? Sonst Punkte verschieben.'); }
-    }
-    render();
+    eichWeiter();
     return;
   }
   if (!K.justieren || !kamEinst.punkte) return;
   // nächsten Punkt greifen (innerhalb von 60 px) und relativ verschieben – der Finger verdeckt ihn nicht
   const r = cv.getBoundingClientRect(), a = ausschnitt();
   let best = -1, bd = 60;
-  kamEinst.punkte.forEach(([x, y], i) => { const d = Math.hypot((x - p[0]) / a.w * r.width, (y - p[1]) / a.h * r.height); if (d < bd) { bd = d; best = i; } });
+  kamEinst.punkte.forEach((q, i) => { if (!q) return; const d = Math.hypot((q[0] - p[0]) / a.w * r.width, (q[1] - p[1]) / a.h * r.height); if (d < bd) { bd = d; best = i; } });
   if (best < 0) return;
   e.preventDefault();
   K.gewaehlt = best;
@@ -2882,8 +3133,25 @@ const ziehenEnde = e => {
 document.addEventListener('pointerup', ziehenEnde);
 document.addEventListener('pointercancel', ziehenEnde);
 
+// nächster Einrichtpunkt; nach dem letzten: ausrechnen (mindestens 4 Punkte nötig)
+function eichWeiter() {
+  K.eich++;
+  if (K.eich < EICHPUNKTE.length) { render(); return; }
+  K.eich = -1;
+  const P = EICHPUNKTE.map((_, i) => K.eichNeu[i] || null);
+  if (P.filter(Boolean).length < 4) { meldung('Mindestens 4 Punkte sind nötig – bitte neu einrichten.'); render(); return; }
+  eichungFertig(P);
+  if (!geo) { meldung('Die Punkte passen nicht zusammen – bitte neu einrichten.'); kamEinst.punkte = null; kamSpeichern(); }
+  else {
+    K.justieren = true;
+    K.gewaehlt = geo.guete.max > 3 ? geo.guete.schlecht : P.findIndex(Boolean);
+    meldung('Eingerichtet. Passt das Netz auf die Drähte? Sonst Punkte verschieben.');
+  }
+  render();
+}
+
 function eichSchieben(dx, dy) {
-  if (!kamEinst.punkte || !K.video || !K.video.videoWidth) return;
+  if (!kamEinst.punkte || !kamEinst.punkte[K.gewaehlt] || !K.video || !K.video.videoWidth) return;
   const p = kamEinst.punkte[K.gewaehlt];
   kamEinst.punkte[K.gewaehlt] = [p[0] + dx / K.video.videoWidth, p[1] + dy / K.video.videoHeight];
   eichungFertig(kamEinst.punkte);
@@ -2901,7 +3169,8 @@ function brettSvg(aktiv) {
   }
   EICHPUNKTE.forEach((p, i) => {
     const x = p.mm[0] * k, y = -p.mm[1] * k, an = i === aktiv;
-    h += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${an ? 9 : 5}" fill="${an ? '#f2c230' : i < aktiv ? '#22a45d' : '#9db0a6'}" stroke="#0f1412" stroke-width="2"/>`;
+    const fertig = i < aktiv && K.eichNeu[i];
+    h += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="${an ? 9 : 5}" fill="${an ? '#f2c230' : fertig ? '#22a45d' : i < aktiv ? '#5d6f65' : '#9db0a6'}" stroke="#0f1412" stroke-width="2"/>`;
   });
   return h + '</svg>';
 }
@@ -2948,23 +3217,29 @@ function renderKamera() {
   // Einrichten
   h += `<section class="karte"><h2>2. Scheibe einrichten ${kamEinst.punkte ? '<span class="ok">✓</span>' : ''}</h2>
     ${K.warnung ? `<p class="warnung" style="margin-top:0">⚠ ${esc(K.warnung)}</p>` : ''}
+    ${geo && K.eich < 0 ? guteHtml() : ''}
     ${kameraBildHtml('einrichten')}
     ${K.aktiv ? zoomRegler(true) : ''}`;
   if (K.eich >= 0) {
     h += `<div class="eich-anleitung">${brettSvg(K.eich)}
-      <div><div class="eich-schritt">Punkt ${K.eich + 1} von 4: Grenze <b>${EICHPUNKTE[K.eich].name}</b></div>
+      <div><div class="eich-schritt">Punkt ${K.eich + 1} von ${EICHPUNKTE.length}: Grenze <b>${EICHPUNKTE[K.eich].name}</b></div>
       <p style="margin:6px 0 10px">Im Bild genau dorthin tippen, wo der <b>äußere Rand des Doppelrings</b> auf den Draht zwischen
         <b>${EICHPUNKTE[K.eich].name.replace(' | ', '</b> und <b>')}</b> trifft.</p>
-      <button class="btn klein" data-a="eichAbbrechen">Abbrechen</button></div></div>`;
+      <div class="zeile">
+        <button class="btn klein" data-a="eichUeberspringen">Nicht sichtbar – überspringen</button>
+        <button class="btn klein" data-a="eichAbbrechen">Abbrechen</button>
+      </div>
+      <p class="hinweis">Je genauer und je mehr Punkte, desto genauer die Erkennung. Mindestens 4 Punkte sind nötig.</p></div></div>`;
   } else {
     h += `<div class="zeile abstand">
-      <button class="btn ${kamEinst.punkte ? '' : 'primaer'}" data-a="eichStart" ${K.aktiv ? '' : 'disabled'}>${kamEinst.punkte ? 'Neu einrichten' : 'Einrichten: 4 Punkte antippen'}</button>
+      <button class="btn ${kamEinst.punkte ? '' : 'primaer'}" data-a="eichStart" ${K.aktiv ? '' : 'disabled'}>${kamEinst.punkte ? 'Neu einrichten' : 'Einrichten: 8 Punkte antippen'}</button>
       ${kamEinst.punkte ? `<button class="btn ${K.justieren ? 'an' : ''}" data-a="justieren" ${K.aktiv ? '' : 'disabled'}>Feinjustieren</button>` : ''}
       <label><input type="checkbox" data-c="kamNetz" ${kamEinst.netz ? 'checked' : ''}> Netz im Training zeigen</label>
     </div>`;
     if (K.justieren && kamEinst.punkte) {
       h += `<div class="justier">
-        <div class="segment">${EICHPUNKTE.map((p, i) => `<button class="btn klein ${i === K.gewaehlt ? 'an' : ''}" data-a="eichWahl" data-i="${i}">${p.name}</button>`).join('')}</div>
+        <div class="segment">${EICHPUNKTE.map((p, i) => (kamEinst.punkte[i]
+          ? `<button class="btn klein ${i === K.gewaehlt ? 'an' : ''}" data-a="eichWahl" data-i="${i}">${p.name}</button>` : '')).join('')}</div>
         <div class="pfeile">
           <span></span><button class="btn" data-a="eichSchieben" data-dx="0" data-dy="-1" aria-label="hoch">▲</button><span></span>
           <button class="btn" data-a="eichSchieben" data-dx="-1" data-dy="0" aria-label="links">◀</button>
@@ -3012,8 +3287,9 @@ function renderKamera() {
       <label>„Knapp“ unter <select data-c="kamKnapp">${[0, 1, 2, 3].map(n =>
         `<option value="${n}" ${kamEinst.knapp === n ? 'selected' : ''}>${n ? n + ' mm' : 'nie'}</option>`).join('')}</select></label>
     </div>
-    <p class="hinweis">Die Spitze wird am schmalen Ende des erkannten Darts vermutet (der Flight ist breit). Liegt sie oft am falschen Ende,
-      hier die Richtung einstellen, in die die Flights im Kamerabild zeigen. Liegt ein Treffer näher als „knapp“ am Feldrand, wird um Prüfung gebeten.</p>
+    <p class="hinweis">In welche Richtung die Darts im Kamerabild abstehen, berechnet das Programm aus der Einrichtung – so findet es
+      die Spitze, auch wenn der Schatten des Darts im Bild wie eine Verlängerung aussieht. Nur wenn die Spitze trotzdem oft am falschen
+      Ende liegt, hier die Richtung der Flights einstellen. Liegt ein Treffer näher als „knapp“ am Feldrand, wird um Prüfung gebeten.</p>
   </section>`;
 
   h += `<section class="karte"><h2>4. Ton bei erkanntem Dart</h2>
@@ -3059,6 +3335,17 @@ function protokollHtml() {
 }
 
 document.addEventListener('toggle', e => { if (e.target.id === 'protokollAuf') K.protokollOffen = e.target.open; }, true);
+
+// Wie gut passen die Einrichtpunkte zusammen?
+function guteHtml() {
+  const g = geo.guete, z = v => v.toFixed(1).replace('.', ',');
+  if (geo.punkte < 5) return `<p class="hinweis warnung" style="margin-top:0">Eingerichtet mit ${geo.punkte} Punkten – die Genauigkeit lässt sich so nicht prüfen.
+    „Neu einrichten“ mit 8 Punkten gleicht Tippfehler und die Verzerrung der Kameralinse aus.</p>`;
+  if (g.max > 3) return `<p class="hinweis warnung" style="margin-top:0">⚠ Punkt <b>${EICHPUNKTE[g.schlecht].name}</b> passt nicht gut zu den anderen
+    (${z(g.max)} mm). Bitte mit „Feinjustieren“ genau auf die Drahtkreuzung schieben (im Bild rot).</p>`;
+  return `<p class="hinweis ok" style="margin-top:0">✓ ${geo.punkte} Punkte, sie passen gut zusammen (im Mittel ${z(g.mittel)} mm, höchstens ${z(g.max)} mm).
+    Die Verzerrung der Kameralinse wird ausgeglichen.</p>`;
+}
 
 function zoomRegler(ausfuehrlich) {
   const hw = hwZoomInfo();
@@ -3154,7 +3441,7 @@ function kameraPanel() {
 // Für Tests (z. B. mit einem künstlichen Kamerabild): window.doppelKamera.quelle(stream), .einrichten(punkte)
 window.doppelKamera = {
   quelle: (q) => { quelleSetzen(q, 'test'); render(); },
-  einrichten: (punkte) => { eichungFertig(punkte); render(); },
+  einrichten: (punkte) => { eichungFertig(punkteAuf8(punkte)); render(); },
   zustand: () => ({ status: K.status, letzte: K.letzte, ref: !!K.ref, pxProMm: K.pxProMm, seitLeer: K.seitLeer, W: K.W, H: K.H }),
   feldAusPunkt
 };
@@ -3247,6 +3534,7 @@ const aktionen = {
   testvideo: () => { const i = document.getElementById('videoInput'); i.value = ''; i.click(); },
   eichStart: () => { K.eich = 0; K.eichNeu = []; K.justieren = false; render(); },
   eichAbbrechen: () => { K.eich = -1; render(); },
+  eichUeberspringen: () => { K.eichNeu[K.eich] = null; eichWeiter(); },
   justieren: () => { K.justieren = !K.justieren; render(); },
   eichWahl: el => { K.gewaehlt = Number(el.dataset.i); render(); },
   eichSchieben: el => eichSchieben(Number(el.dataset.dx), Number(el.dataset.dy))
