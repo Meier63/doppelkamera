@@ -187,6 +187,8 @@ label { display: inline-flex; align-items: center; gap: 8px; }
 .regler { display: grid; grid-template-columns: auto 1fr 70px; gap: 6px 12px; align-items: center; margin-top: 14px; }
 .regler input[type=range] { width: 100%; height: 40px; accent-color: var(--gruen); }
 .tipps { margin: 0; padding-left: 20px; }
+.zoom-knoepfe { margin-bottom: 8px; }
+.zoom-knoepfe b { min-width: 52px; text-align: center; }
 .tipps li { margin-bottom: 8px; }
 
 /* Statistik */
@@ -1701,7 +1703,14 @@ async function dateiLaden() {
 // Regler der Kamera: Wert sofort übernehmen, ohne die Seite neu aufzubauen
 document.addEventListener('input', e => {
   const c = e.target.dataset && e.target.dataset.c;
-  if (c === 'kamEmpf') { kamEinst.empf = Number(e.target.value); document.getElementById('wertEmpf').textContent = kamEinst.empf; }
+  if (c === 'kamZoom') zoomAendern(Number(e.target.value));
+  else if (c === 'kamHwZoom') {
+    kamEinst.hwZoom = Number(e.target.value);
+    document.getElementById('wertHwZoom').textContent = String(kamEinst.hwZoom.toFixed(1)).replace('.', ',') + '×';
+    hwZoomSetzen(kamEinst.hwZoom);
+    if (kamEinst.punkte) K.warnung = 'Der Kamera-Zoom wurde geändert – bitte die Scheibe neu einrichten.';
+  }
+  else if (c === 'kamEmpf') { kamEinst.empf = Number(e.target.value); document.getElementById('wertEmpf').textContent = kamEinst.empf; }
   else if (c === 'kamRuhe') { kamEinst.ruhe = Number(e.target.value); document.getElementById('wertRuhe').textContent = kamEinst.ruhe + ' ms'; }
   else return;
   kamSpeichern();
@@ -1859,6 +1868,7 @@ let kamEinst = Object.assign({
   punkte: null, seitenverh: null,      // 4 Einrichtpunkte im Bild (0–1) und Bildformat beim Einrichten
   empf: 6, ruhe: 400,                  // Empfindlichkeit 1–10, Ruhezeit in ms
   richtung: 'auto', gelernt: null,     // wohin die Flights im Bild zeigen (gelernt: Mittel aus eindeutigen Darts)
+  zoom: 1, hwZoom: null,               // digitaler Zoom (Ausschnitt um die Scheibe, 1–4×) und Zoom der Kamera selbst
   netz: true, diff: false, knapp: 2    // Netz/Unterschied im Bild zeigen; „knapp“ ab so vielen mm am Feldrand
 }, lsLesen(LS.kamera) || {});
 const kamSpeichern = () => lsSchreiben(LS.kamera, kamEinst);
@@ -1914,7 +1924,44 @@ function geoBerechnen() {
     const w = (90 - i * 18 + 9) * Math.PI / 180;
     netz.push([abb(zuBild, BRETT.bullAussen * Math.cos(w), BRETT.bullAussen * Math.sin(w)), abb(zuBild, BRETT.dopAussen * Math.cos(w), BRETT.dopAussen * Math.sin(w))]);
   }
-  geo = { zuBrett, zuBild, netz, mitte: abb(zuBild, 0, 0).slice(0, 2) };
+  // Rahmen um die Scheibe samt herausragender Darts (270 mm) – für den Zoom
+  const rand = kreis(270, 72), xs = rand.map(p => p[0]), ys = rand.map(p => p[1]);
+  const x0 = Math.max(0, Math.min(...xs)), x1 = Math.min(1, Math.max(...xs)), y0 = Math.max(0, Math.min(...ys)), y1 = Math.min(1, Math.max(...ys));
+  geo = { zuBrett, zuBild, netz, mitte: abb(zuBild, 0, 0).slice(0, 2), zentrum: [(x0 + x1) / 2, (y0 + y1) / 2], groesse: [x1 - x0, y1 - y0] };
+}
+
+// Ausschnitt des Kamerabilds (digitaler Zoom) in Anteilen des ganzen Bilds; Mitte = Scheibe, sonst Bildmitte.
+// Alle gespeicherten Punkte beziehen sich aufs ganze Bild – der Zoom ändert die Einrichtung nicht.
+function ausschnitt() {
+  const z = K.eich >= 0 || K.justieren ? 1 : Math.min(4, Math.max(1, Number(kamEinst.zoom) || 1)), w = 1 / z;   // beim Einrichten: ganzes Bild
+  const [mx, my] = geo ? geo.zentrum : [0.5, 0.5];
+  return { x: Math.min(1 - w, Math.max(0, mx - w / 2)), y: Math.min(1 - w, Math.max(0, my - w / 2)), w, h: w, z };
+}
+// so weit zoomen, dass die ganze Scheibe samt Darts gerade ins Bild passt
+function zoomAufScheibe() {
+  if (!geo) return;
+  kamEinst.zoom = Math.floor(Math.min(4, Math.max(1, 0.97 / Math.max(...geo.groesse))) * 10) / 10;
+  kamSpeichern();
+}
+function zoomAendern(z) {
+  kamEinst.zoom = Math.round(Math.min(4, Math.max(1, z)) * 10) / 10;
+  kamSpeichern();
+  const el = document.getElementById('wertZoom');
+  if (el) el.textContent = zoomText();
+}
+const zoomText = () => String(kamEinst.zoom.toFixed(1)).replace('.', ',') + '×';
+
+// Zoom der Kamera selbst (nur wenn Kamera und Browser es unterstützen; ändert das Bild → neu einrichten)
+function hwZoomInfo() {
+  const t = K.stream && K.stream.getVideoTracks()[0];
+  const cap = t && t.getCapabilities ? t.getCapabilities() : {};
+  if (!cap.zoom || !(cap.zoom.max > cap.zoom.min)) return null;
+  return { t, min: cap.zoom.min, max: cap.zoom.max, step: cap.zoom.step || 0.1, wert: t.getSettings().zoom ?? cap.zoom.min };
+}
+async function hwZoomSetzen(v) {
+  const i = hwZoomInfo();
+  if (!i) return;
+  try { await i.t.applyConstraints({ advanced: [{ zoom: Math.min(i.max, Math.max(i.min, v)) }] }); } catch (e) { /* nicht unterstützt */ }
 }
 
 // Feld zu einem Punkt auf der Scheibe (mm)
@@ -2019,8 +2066,8 @@ function unschaerfe(a, W, H, r) {
 
 // Graustufen (y) und Rot-Grün-Anteil (c, damit ein Dart auf rotem/grünem Ring auffällt), weichgezeichnet
 function bildLesen(gross) {
-  const W = gross ? K.W : K.w, H = gross ? K.H : K.h, cx = gross ? K.cx : K.cxk;
-  cx.drawImage(K.video, 0, 0, W, H);
+  const W = gross ? K.W : K.w, H = gross ? K.H : K.h, cx = gross ? K.cx : K.cxk, a = K.a, v = K.video;
+  cx.drawImage(v, a.x * v.videoWidth, a.y * v.videoHeight, a.w * v.videoWidth, a.h * v.videoHeight, 0, 0, W, H);
   const d = cx.getImageData(0, 0, W, H).data;
   const n = W * H, y = new Float32Array(n), c = gross ? new Float32Array(n) : null;
   for (let i = 0, j = 0; i < n; i++, j += 4) {
@@ -2175,9 +2222,12 @@ function spitzeVerfolgen(sp, F, R, thr) {
 function groessePruefen() {
   const v = K.video, vw = v.videoWidth, vh = v.videoHeight;
   if (!vw || !vh || v.readyState < 2) return false;
-  const W = Math.min(640, vw), H = Math.round(W * vh / vw);
-  if (W !== K.W || H !== K.H) {
-    K.W = W; K.H = H; K.w = 160; K.h = Math.round(160 * vh / vw);
+  const a = ausschnitt(), sw = vw * a.w, sh = vh * a.h;
+  const W = Math.round(Math.min(800, sw)), H = Math.round(W * sh / sw);   // ausgewertet wird nur der Ausschnitt, bis 800 px breit
+  const key = [W, H, a.x, a.y, a.w].map(n => n.toFixed(4)).join();
+  if (key !== K.key) {
+    K.key = key; K.a = a;
+    K.W = W; K.H = H; K.w = 160; K.h = Math.round(160 * sh / sw);
     K.cv = leinwand(W, H); K.cx = K.cv.getContext('2d', { willReadFrequently: true });
     K.cvk = leinwand(K.w, K.h); K.cxk = K.cvk.getContext('2d', { willReadFrequently: true });
     K.ref = K.refLeer = K.refKlein = K.vorher = null;
@@ -2196,7 +2246,7 @@ function maskenBerechnen() {
     if (!geo) return m.fill(1);
     const vz = Math.sign(abb(geo.zuBrett, ...geo.mitte)[2]);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-      const [bx, by, w] = abb(geo.zuBrett, (x + 0.5) / W, (y + 0.5) / H);
+      const [bx, by, w] = abb(geo.zuBrett, K.a.x + (x + 0.5) / W * K.a.w, K.a.y + (y + 0.5) / H * K.a.h);
       m[y * W + x] = Math.sign(w) === vz && Math.hypot(bx, by) < 300 ? 1 : 0;
     }
     return m;
@@ -2204,7 +2254,7 @@ function maskenBerechnen() {
   K.maske = mk(K.W, K.H);
   K.maskeK = mk(K.w, K.h);
   K.maskeAnz = K.maskeK.reduce((a, b) => a + b, 0) || 1;
-  K.pxProMm = geo ? Math.sqrt(viereckFlaeche(kamEinst.punkte.map(([x, y]) => [x * K.W, y * K.H])) / (2 * BRETT.dopAussen ** 2)) : 1;
+  K.pxProMm = geo ? Math.sqrt(viereckFlaeche(kamEinst.punkte.map(([x, y]) => [(x - K.a.x) / K.a.w * K.W, (y - K.a.y) / K.a.h * K.H])) / (2 * BRETT.dopAussen ** 2)) : 1;
 }
 
 function referenzNehmen(F) {
@@ -2218,6 +2268,7 @@ function referenzNehmen(F) {
 function erkennungZuruecksetzen() {
   K.ref = K.refLeer = K.refKlein = K.vorher = null;
   K.W = 0;
+  K.key = '';
   K.stillSeit = performance.now();
   K.bewegt = false;
   K.grossMs = 0;
@@ -2298,7 +2349,7 @@ function auswerten(gross, klein) {
   const sp = spitzeVerfolgen(spitzeSchaetzen(b, K.W), F, K.ref, thr);
   neueRef();
   K.seitLeer++;
-  const nx = (sp.x + 0.5) / K.W, ny = (sp.y + 0.5) / K.H;
+  const nx = K.a.x + (sp.x + 0.5) / K.W * K.a.w, ny = K.a.y + (sp.y + 0.5) / K.H * K.a.h;
   const erg = { nx, ny, sicher: sp.sicher, zeit: Date.now() };
   if (geo) {
     const [bx, by] = abb(geo.zuBrett, nx, ny);
@@ -2412,7 +2463,7 @@ async function kameraStarten(id, merken) {
   K.startet = true;
   K.fehler = '';
   render();
-  const groesse = { width: { ideal: 1280 }, height: { ideal: 720 } };
+  const groesse = { width: { ideal: 1920 }, height: { ideal: 1080 } };   // hohe Auflösung: Zoom-Ausschnitt bleibt scharf
   let stream = null, fehler = null;
   try {
     stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: id ? { deviceId: { exact: id }, ...groesse } : groesse });
@@ -2424,6 +2475,7 @@ async function kameraStarten(id, merken) {
   }
   if (!stream) { K.startet = false; K.fehler = kameraFehlerText(fehler); render(); return false; }
   quelleSetzen(stream, 'kamera');
+  if (kamEinst.hwZoom != null) await hwZoomSetzen(kamEinst.hwZoom);
   await kameraListe();
   const track = stream.getVideoTracks()[0];
   const einst2 = track && track.getSettings ? track.getSettings() : {};
@@ -2492,12 +2544,6 @@ function kameraVerwalten() {
 
 // ---------- Kamera: Bild und Overlay zeichnen ----------
 
-function linie(c, pts, W, H, zu) {
-  c.beginPath();
-  pts.forEach(([x, y], i) => (i ? c.lineTo(x * W, y * H) : c.moveTo(x * W, y * H)));
-  if (zu) c.closePath();
-}
-
 function markeZeichnen(c, x, y, farbe, s) {
   c.beginPath();
   c.arc(x, y, 7 * s, 0, 2 * Math.PI);
@@ -2515,41 +2561,65 @@ function bildZeichnen() {
   if (cv.style.height !== bh + 'px') cv.style.height = bh + 'px';
   const W = Math.round(bw * s), H = Math.round(bh * s);
   if (cv.width !== W || cv.height !== H) { cv.width = W; cv.height = H; }
-  const c = cv.getContext('2d');
-  c.drawImage(v, 0, 0, W, H);
-  if (K.diffBild && kamEinst.diff) c.drawImage(K.diffBild, 0, 0, W, H);
-  const einrichten = cv.dataset.modus === 'einrichten';
-
-  const overlay = (lw) => {
-    if (!geo || !(kamEinst.netz || einrichten)) return;
-    c.lineWidth = lw;
-    c.strokeStyle = 'rgba(80, 230, 255, .8)';
-    for (const l of geo.netz) { linie(c, l, W, H); c.stroke(); }
+  const c = cv.getContext('2d'), a = ausschnitt(), vw = v.videoWidth, vh = v.videoHeight;
+  const X = nx => (nx - a.x) / a.w * W, Y = ny => (ny - a.y) / a.h * H;   // ganzes Bild (0–1) → Ausschnitt in der Anzeige
+  const bild = () => c.drawImage(v, a.x * vw, a.y * vh, a.w * vw, a.h * vh, 0, 0, W, H);
+  const linie = (pts, zu) => {
+    c.beginPath();
+    pts.forEach(([x, y], i) => (i ? c.lineTo(X(x), Y(y)) : c.moveTo(X(x), Y(y))));
+    if (zu) c.closePath();
   };
-  // Zielfeld hervorheben
-  if (kameraImSpiel() && geo && cv.dataset.modus === 'lauf') {
-    const u = zielUmriss(lauf.felder[lauf.idx]);
-    if (u) { linie(c, u, W, H, true); c.fillStyle = 'rgba(242, 194, 48, .35)'; c.fill(); c.lineWidth = 2 * s; c.strokeStyle = '#f2c230'; c.stroke(); }
-  }
-  overlay(1.2 * s);
-
-  // erkannte Darts
-  if (cv.dataset.modus === 'lauf' && lauf) {
+  const modus = cv.dataset.modus, einrichten = modus === 'einrichten';
+  const ziel = kameraImSpiel() && geo && modus === 'lauf' ? zielUmriss(lauf.felder[lauf.idx]) : null;
+  const marken = [];
+  if (modus === 'lauf' && lauf) {
     const n = lauf.darts.length, ab = lauf.pause ? n : n - (n % 3 || (lauf.ziehen ? 3 : 0));
     for (let i = Math.max(0, ab); i < n; i++) {
       const x = lauf.info[i];
-      if (x && x.nx != null) markeZeichnen(c, x.nx * W, x.ny * H, lauf.darts[i] ? '#22a45d' : '#e04848', s);
+      if (x && x.nx != null) marken.push([x.nx, x.ny, lauf.darts[i] ? '#22a45d' : '#e04848']);
     }
-  } else {
-    for (const p of K.testPunkte) markeZeichnen(c, p.nx * W, p.ny * H, '#f2c230', s);
-  }
+  } else for (const p of K.testPunkte) marken.push([p.nx, p.ny, '#f2c230']);
 
-  // Einrichtpunkte und Lupe
+  // Inhalt (auch in der Lupe, dort mit dünneren Linien: f = Vergrößerung)
+  const inhalt = f => {
+    if (ziel) { linie(ziel, true); c.fillStyle = 'rgba(242, 194, 48, .35)'; c.fill(); c.lineWidth = 2 * s / f; c.strokeStyle = '#f2c230'; c.stroke(); }
+    if (geo && (kamEinst.netz || einrichten)) {
+      c.lineWidth = 1.2 * s / f;
+      c.strokeStyle = 'rgba(80, 230, 255, .8)';
+      for (const l of geo.netz) { linie(l); c.stroke(); }
+    }
+    for (const [x, y, farbe] of marken) markeZeichnen(c, X(x), Y(y), farbe, s / f);
+  };
+  // Lupe: Ausschnitt um (nx, ny) vergrößert, in der Ecke gegenüber
+  const lupe = (nx, ny, z, kreuz, anteil) => {
+    const px = X(nx), py = Y(ny), gr = Math.min(W, H) * anteil;
+    const lx = px < W / 2 ? W - gr - 8 * s : 8 * s, ly = py < H / 2 ? H - gr - 8 * s : 8 * s;
+    c.save();
+    c.beginPath(); c.rect(lx, ly, gr, gr); c.clip();
+    c.setTransform(z, 0, 0, z, lx + gr / 2 - px * z, ly + gr / 2 - py * z);
+    bild();
+    inhalt(z);
+    c.restore();
+    c.lineWidth = 2 * s;
+    c.strokeStyle = '#f2c230';
+    c.strokeRect(lx, ly, gr, gr);
+    if (kreuz) {
+      c.beginPath();
+      c.moveTo(lx + gr / 2 - 12 * s, ly + gr / 2); c.lineTo(lx + gr / 2 + 12 * s, ly + gr / 2);
+      c.moveTo(lx + gr / 2, ly + gr / 2 - 12 * s); c.lineTo(lx + gr / 2, ly + gr / 2 + 12 * s);
+      c.stroke();
+    }
+  };
+
+  bild();
+  if (K.diffBild && kamEinst.diff && K.a && K.a.x === a.x && K.a.y === a.y && K.a.w === a.w) c.drawImage(K.diffBild, 0, 0, W, H);
+  inhalt(1);
+
   if (einrichten) {
     const P = K.eich >= 0 ? K.eichNeu : (kamEinst.punkte || []);
     P.forEach((p, i) => {
       if (!p) return;
-      const x = p[0] * W, y = p[1] * H, aktivP = K.justieren && i === K.gewaehlt;
+      const x = X(p[0]), y = Y(p[1]), aktivP = K.justieren && i === K.gewaehlt;
       c.lineWidth = 2 * s;
       c.strokeStyle = aktivP ? '#f2c230' : '#fff';
       c.beginPath(); c.arc(x, y, (aktivP ? 14 : 10) * s, 0, 2 * Math.PI); c.stroke();
@@ -2558,32 +2628,20 @@ function bildZeichnen() {
       c.fillStyle = aktivP ? '#f2c230' : '#fff';
       c.fillText(EICHPUNKTE[i].name, x + 16 * s, y - 14 * s);
     });
-    if (K.justieren && kamEinst.punkte) {
-      // Lupe: dreifach vergrößert, in der Ecke gegenüber dem gewählten Punkt
-      const [px, py] = kamEinst.punkte[K.gewaehlt], z = 3, gr = Math.min(W, H) * 0.42;
-      const lx = px < 0.5 ? W - gr - 8 * s : 8 * s, ly = py < 0.5 ? H - gr - 8 * s : 8 * s;
-      c.save();
-      c.beginPath(); c.rect(lx, ly, gr, gr); c.clip();
-      c.setTransform(z, 0, 0, z, lx + gr / 2 - px * W * z, ly + gr / 2 - py * H * z);
-      c.drawImage(v, 0, 0, W, H);
-      overlay(1.2 * s / z);
-      c.restore();
-      c.lineWidth = 2 * s;
-      c.strokeStyle = '#f2c230';
-      c.strokeRect(lx, ly, gr, gr);
-      c.beginPath();
-      c.moveTo(lx + gr / 2 - 12 * s, ly + gr / 2); c.lineTo(lx + gr / 2 + 12 * s, ly + gr / 2);
-      c.moveTo(lx + gr / 2, ly + gr / 2 - 12 * s); c.lineTo(lx + gr / 2, ly + gr / 2 + 12 * s);
-      c.stroke();
-    }
+    if (K.justieren && kamEinst.punkte) { const [px, py] = kamEinst.punkte[K.gewaehlt]; lupe(px, py, 3, true, 0.42); return; }
+    if (K.eich >= 0) return;
   }
+  // Trefferbild: der zuletzt erkannte Dart vergrößert
+  const m = marken[marken.length - 1];
+  if (m) lupe(m[0], m[1], 2.5, false, 0.5);
 }
 
 // ---------- Kamera: Einrichten (4 Punkte antippen, verschieben) ----------
 
 function bildPunkt(e, cv) {
-  const r = cv.getBoundingClientRect();
-  return [Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))];
+  const r = cv.getBoundingClientRect(), a = ausschnitt();
+  const fx = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width)), fy = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height));
+  return [a.x + fx * a.w, a.y + fy * a.h];   // Anteil am ganzen Kamerabild
 }
 
 function eichungFertig(punkte) {
@@ -2615,9 +2673,9 @@ document.addEventListener('pointerdown', e => {
   }
   if (!K.justieren || !kamEinst.punkte) return;
   // nächsten Punkt greifen (innerhalb von 60 px) und relativ verschieben – der Finger verdeckt ihn nicht
-  const r = cv.getBoundingClientRect();
+  const r = cv.getBoundingClientRect(), a = ausschnitt();
   let best = -1, bd = 60;
-  kamEinst.punkte.forEach(([x, y], i) => { const d = Math.hypot((x - p[0]) * r.width, (y - p[1]) * r.height); if (d < bd) { bd = d; best = i; } });
+  kamEinst.punkte.forEach(([x, y], i) => { const d = Math.hypot((x - p[0]) / a.w * r.width, (y - p[1]) / a.h * r.height); if (d < bd) { bd = d; best = i; } });
   if (best < 0) return;
   e.preventDefault();
   K.gewaehlt = best;
@@ -2707,7 +2765,8 @@ function renderKamera() {
   // Einrichten
   h += `<section class="karte"><h2>2. Scheibe einrichten ${kamEinst.punkte ? '<span class="ok">✓</span>' : ''}</h2>
     ${K.warnung ? `<p class="warnung" style="margin-top:0">⚠ ${esc(K.warnung)}</p>` : ''}
-    ${kameraBildHtml('einrichten')}`;
+    ${kameraBildHtml('einrichten')}
+    ${K.aktiv ? zoomRegler(true) : ''}`;
   if (K.eich >= 0) {
     h += `<div class="eich-anleitung">${brettSvg(K.eich)}
       <div><div class="eich-schritt">Punkt ${K.eich + 1} von 4: Grenze <b>${EICHPUNKTE[K.eich].name}</b></div>
@@ -2784,6 +2843,27 @@ function renderKamera() {
   return h;
 }
 
+function zoomRegler(ausfuehrlich) {
+  const hw = hwZoomInfo();
+  let h = `<div class="regler">
+      <span>Zoom</span><input type="range" min="1" max="4" step="0.1" value="${kamEinst.zoom}" data-c="kamZoom" aria-label="Zoom">
+      <b id="wertZoom">${zoomText()}</b>
+      ${hw ? `<span>Kamera-Zoom</span><input type="range" min="${hw.min}" max="${hw.max}" step="${hw.step}" value="${kamEinst.hwZoom ?? hw.wert}" data-c="kamHwZoom" aria-label="Kamera-Zoom">
+      <b id="wertHwZoom">${String(Number(kamEinst.hwZoom ?? hw.wert).toFixed(1)).replace('.', ',')}×</b>` : ''}
+    </div>`;
+  if (!ausfuehrlich) return h;
+  h += `<div class="zeile abstand">
+      ${geo ? '<button class="btn klein" data-a="zoomScheibe">Auf die Scheibe zoomen</button>' : ''}
+      ${kamEinst.zoom > 1 ? '<button class="btn klein" data-a="zoomAus">Ganzes Bild</button>' : ''}
+    </div>
+    <p class="hinweis"><b>Zoom</b> vergrößert den Ausschnitt um die Scheibe: Im Training ist die Scheibe größer zu sehen, und die Erkennung
+      wertet dort mehr Bildpunkte aus. Die ganze Scheibe muss im Bild bleiben. Die Einrichtung bleibt gültig. Beim Einrichten und Feinjustieren
+      wird das ganze Bild gezeigt.
+      ${hw ? '<br><b>Kamera-Zoom</b> verstellt die Kamera selbst (schärfer als der Zoom oben). Danach muss die Scheibe <b>neu eingerichtet</b> werden.'
+        : '<br>Diese Kamera bietet keinen eigenen Zoom an (oder der Browser gibt ihn nicht frei) – der Zoom oben arbeitet mit dem Kamerabild.'}</p>`;
+  return h;
+}
+
 // Ergebnis des letzten Darts (im Training mit Kamera)
 function letzterDart() {
   const L = lauf;
@@ -2841,6 +2921,12 @@ function renderErgebnis() {
 function kameraPanel() {
   let h = kameraBildHtml('lauf');
   h += `<div class="kamera-status" id="kameraStatus">${esc(K.status || '')}</div>`;
+  if (K.aktiv) h += `<div class="zeile mitte zoom-knoepfe">
+      <button class="btn klein" data-a="zoomMinus" aria-label="kleiner">− Zoom</button>
+      <b id="wertZoom">${zoomText()}</b>
+      <button class="btn klein" data-a="zoomPlus" aria-label="größer">Zoom +</button>
+      ${geo ? '<button class="btn klein" data-a="zoomScheibe">Auf die Scheibe</button>' : ''}
+    </div>`;
   if (K.aktiv && !geo) h += `<p class="hinweis warnung" style="text-align:center">Scheibe nicht eingerichtet – unter „Kamera“ einrichten. Bis dahin von Hand eingeben.</p>`;
   if (K.fehler) h += `<p class="hinweis warnung" style="text-align:center">${esc(K.fehler)}</p>`;
   if (K.aktiv && lauf && lauf.ziehen) h += `<div class="zeile mitte"><button class="btn klein" data-a="scheibeLeer">Darts sind gezogen</button></div>`;
@@ -2924,6 +3010,10 @@ const aktionen = {
   herunterladen: () => herunterladen(),
   dateiLaden: () => dateiLaden(),
   korrigieren: () => korrigieren(),
+  zoomPlus: () => zoomAendern(kamEinst.zoom + 0.25),
+  zoomMinus: () => zoomAendern(kamEinst.zoom - 0.25),
+  zoomScheibe: () => { zoomAufScheibe(); render(); },
+  zoomAus: () => { zoomAendern(1); render(); },
   scheibeLeer: () => scheibeLeer(),
   kameraStart: () => kameraStarten(kamEinst.geraet, true),
   kameraStopp: () => { kameraStoppen(); K.justieren = false; K.eich = -1; render(); },
